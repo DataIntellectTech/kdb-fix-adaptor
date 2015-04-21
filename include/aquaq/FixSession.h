@@ -113,7 +113,7 @@ template<typename T>
 FixSession<T>& FixSession<T>::start(void) { mThread->start(); return *this; }
 
 template<typename T>
-FixSession<T>& FixSession<T>::stop(void) { return *this; }
+FixSession<T>& FixSession<T>::stop(void) { mThread->stop(); return *this; }
 
 template<typename T>
 FixSession<T>& FixSession<T>::sendMessage(const K& dict) { std::cout << "sending a message from kdb+ to fix engine" << std::endl; return *this; }
