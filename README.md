@@ -1,0 +1,1 @@
+# kdb-fix-adaptor
