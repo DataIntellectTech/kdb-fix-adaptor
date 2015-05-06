@@ -1,0 +1,23 @@
+#!/bin/bash
+
+function start_library() {
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./lib
+    rlwrap q fix.q
+}
+
+function run_tests() {
+    echo "[ STARTING KDB+ UNIT TESTS ]"
+    q test/runtests.q
+    echo "[ STARTING C++ UNIT TESTS ]"
+    ./test/runtests
+}
+
+function init() {
+    if [[ $1 != "test" ]]; then
+        start_library
+    else
+        run_tests
+    fi
+}
+
+init $@

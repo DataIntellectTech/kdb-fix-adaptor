@@ -11,11 +11,9 @@
 #include "quickfix/fix44/NewOrderSingle.h"
 #include "quickfix/fix50/NewOrderSingle.h"
 
-class FixEngineApplication : public FIX::Application, public FIX::MessageCracker 
+class FixEngineApplication : public FIX::Application
 {
 public:
-	FixEngineApplication() : _orderId(0), _execId(0) {}
-
 	void onCreate(const FIX::SessionID& sessionID);
 	void onLogon(const FIX::SessionID& sessionID);
 	void onLogout(const FIX::SessionID& sessionID);
@@ -25,19 +23,6 @@ public:
 	void toApp(FIX::Message& message, const FIX::SessionID& sessionID) throw (FIX::DoNotSend);
 	void fromApp(const FIX::Message& message, const FIX::SessionID& sessionID)
 		throw (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType);
-
-	void onMessage(const FIX40::NewOrderSingle& order, const FIX::SessionID& sessionID);
-	void onMessage(const FIX41::NewOrderSingle& order, const FIX::SessionID& sessionID);
-	void onMessage(const FIX42::NewOrderSingle& order, const FIX::SessionID& sessionID);
-	void onMessage(const FIX43::NewOrderSingle& order, const FIX::SessionID& sessionID);
-	void onMessage(const FIX44::NewOrderSingle& order, const FIX::SessionID& sessionID);
-	void onMessage(const FIX50::NewOrderSingle& order, const FIX::SessionID& sessionID);
-
-	std::string genOrderId();
-	std::string genExecId();
-private:
-	int _orderId;
-	int _execId;
 };
 
 #endif

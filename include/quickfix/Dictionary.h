@@ -83,7 +83,6 @@ public:
 
   iterator begin() const { return m_data.begin(); }
   iterator end() const { return m_data.end(); }
-
 private:
   Data m_data;
   std::string m_name;

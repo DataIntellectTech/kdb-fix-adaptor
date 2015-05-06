@@ -213,7 +213,6 @@ public:
 
   Log* getLog() { return &m_state; }
   const MessageStore* getStore() { return &m_state; }
-
 private:
   typedef std::map < SessionID, Session* > Sessions;
   typedef std::set < SessionID > SessionIDs;

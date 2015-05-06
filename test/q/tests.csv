@@ -1,0 +1,15 @@
+comment,,0,,this will be ignored
+before,,,k,aa::22
+before,0,0,k,aa::22
+before,0,0,q,aa::22
+before,0,0,q,aa::22
+true,0,0,k,2=+/1 1
+true,0,0,q,2=sum 1 1
+true,0,0,k,2=sum 1 1
+true,0,0,k,(*/2 2)~+/2 2
+comment,0,0,k,(*/2 2)~+/2 3
+run,10,0,k,do[100;+/1.1+!10000]
+fail,0,0,q,2=`aa
+after,0,0,k,bb::33
+before,0,0,k,aa::22
+before,0,0,k,aa::22

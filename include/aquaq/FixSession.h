@@ -38,7 +38,27 @@ public:
     std::string SocketHost = "127.0.0.1";
     std::string SocketReuseAddress = "Y";
     std::string SessionQualifier = "0";
-            
+    std::string DefaultApplVerID = "";
+    std::string UseDataDictionary = "";
+    std::string SendResetSeqNumFlag = "";
+    std::string SendRedundantResendRequests = "";
+    std::string CheckCompID = "";
+    std::string CheckLatency = "";
+    std::string MaxLatency = "";
+    std::string SocketNoDelay = "";
+    std::string SendBufferSize = "";
+    std::string RecieveBufferSize = "";
+    std::string ValidateLengthAndChecksum = "";
+    std::string ValidateFieldsOutOfOrder = "";
+    std::string ValidateFieldsHaveValues = "";
+    std::string ValidateUserDefinedFields = "";
+    std::string LogonTimeout = "";
+    std::string LogoutTimeout = "";
+    std::string ResetOnLogon = "";
+    std::string ResetOnLogout = "";
+    std::string ResetOnDisconnect = "";
+    std::string HttpAcceptPort = "";
+
     friend std::ostream& operator<<(std::ostream& output, const FixSessionSettings& settings);
 };
 
@@ -58,7 +78,7 @@ std::ostream& operator<<(std::ostream& output, const FixSessionSettings& setting
     output << "StartTime=" << settings.StartTime << std::endl;
     output << "EndTime=" << settings.EndTime << std::endl;
     output << "ConnectionType=" << settings.ConnectionType << std::endl;
- 
+
     output << "[SESSION]" << std::endl;
 
     if (settings.ConnectionType == "acceptor") {
@@ -125,12 +145,48 @@ template<typename T>
 FixSession<T>::FixSession(const FixSessionSettings& settings)
 {
     // TODO :: Make the default config file location available from the settings?
-    mSessionId = std::make_shared<FIX::SessionID>(settings.BeginString, settings.SourceCompID, settings.TargetCompID);
+    if (settings.ConnectionType == "acceptor") {
+        mSessionId = std::make_shared<FIX::SessionID>(settings.BeginString, settings.SourceCompID, settings.TargetCompID);
+    } else {
+        mSessionId = std::make_shared<FIX::SessionID>(settings.BeginString, settings.SourceCompID, settings.TargetCompID, settings.SessionQualifier);
+    }
     mSettings = std::make_shared<FIX::SessionSettings>("config/acceptor-config.ini");
+    
+    std::cout << "[FixSession<T>::FixSession] before settings: " << std::endl << *mSettings << std::endl;
 
+    const FIX::Dictionary& dict = mSettings->get();
+    std::string beginString = dict.getString("BeginString", true);
+    std::cout << " [-] The begin string is: " << std::endl;
+ 
+    // Create a new dictionary to hold our settings.
+    FIX::Dictionary newSettings;
+    newSettings.setString("Version",        "FIX.4.4");
+    newSettings.setString("TargetCompID",   "BuySideID");
+    newSettings.setString("SourceCompID",   "SellSideID");
+    newSettings.setString("Port",           "7025");
+    newSettings.setString("Host",           "127.0.0.1");
+    newSettings.setString("ConnectionType", "acceptor");
+
+    // Use the SessionID and the settings.set(sessionID, dictionary) to initialize the other sessions?
+
+    // Merging the old dictionary into the  new one will fill in any fields
+    // that are missing from the new dictionary.
+    newSettings.merge(dict);
+  
+    // Set the new dictionary in the settings object. 
+    mSettings->set(newSettings);
+
+    std::stringstream defaults;
+    defaults << *mSettings;
+    std::cout << " [+] loading the default settings from the dictionary/config " << std::endl << defaults.str() << std::endl; 
+ 
     std::stringstream stream;
-    stream << settings;
+    stream << defaults.str();
+ 
+    std::cout << " [+] writing the default settings to the dictionary/config " << std::endl << stream.str() << std::endl;
     stream >> *mSettings;
+
+    std::cout << " [+] finalized in-memory settings" << std::endl <<  *mSettings << std::endl;
 
     mApplication = std::make_shared<FixEngineApplication>();
     mStore = std::make_shared<FIX::FileStoreFactory>(*mSettings);
@@ -138,76 +194,4 @@ FixSession<T>::FixSession(const FixSessionSettings& settings)
 
     mThread = std::make_shared<T>(*mApplication, *mStore, *mSettings, *mLog);
 }
-
-////
-// Builds a new FixSession object and validates the arguments that will be passed to the object
-// when it is constructed.
-//
-template<typename T>
-class FixSession<T>::Builder
-{
-public:
-    Builder() { } // TODO :: force required arguments in the constructor
-
-    ////
-    // Sets the version of the FIX session. Should be one of the supported FIX versions as listed below. Passing
-    // a fix version that cannot be found in the configuration folder will cause a runtime exception to be thrown.
-    //
-    // Supported Versions:
-    //      FIX.4.0
-    //      FIX.4.1
-    //      FIX.4.2
-    //      FIX.4.3
-    //      FIX.4.4
-    //      FIX.5.0
-    //      FIX.5.0SP1
-    //      FIX.5.0SP2
-    //      FIXT1.1
-    //
-    // Additional fix specifications can be added to the config/spec folder.
-    //
-    Builder& setVersion(const std::string& version) { this->settings.BeginString = version; return *this; }
-
-    ////
-    // Sets the target id of the FIX session. 
-    //
-    Builder& setTargetId(const std::string& targetId) { this->settings.TargetCompID = targetId; return *this; }
-
-    ////
-    // Sets the source id of the FIX session.
-    //
-    Builder& setSourceId(const std::string& sourceId) { this->settings.SourceCompID = sourceId; return *this; }
-    
-    ////
-    // Sets the session qualifier to be used for the FIX session. This is only valid for initiators and will be ignored
-    // on acceptors. Should be a unique string to identify the session, can be left empty if you plan to have just one
-    // initiator on the client side.
-    //
-    Builder& setQualifier(const std::string& qualifier) { this->settings.SessionQualifier = qualifier; return *this; }
-    
-    ////
-    // Sets the port to be used by the FIX session. For initiators, this is used to indicate which port they should attempt
-    // to connect on the target FIX engine.
-    //
-    // TODO :: Add the SocketAddress setting instead of defaulting to localhost
-    //
-    Builder& setPort(const std::string& port) { this->settings.SocketPort = port; return *this; }
-    
-    ////
-    // Sets the host to be used by the initiator process when opening a connection to the FIX engine.
-    // 
-    //
-    Builder& setHost(const std::string& host) { this->settings.SocketHost = host; return *this; }
-    
-    ////
-    //
-    //
-    Builder& setType(const std::string& type) { this->settings.ConnectionType = type; return *this; }
-
-    ////
-    //
-    FixSession<T>* build() { return new FixSession<T>(this->settings); }
-private:
-    FixSessionSettings settings;
-};
 
