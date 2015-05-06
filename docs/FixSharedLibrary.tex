@@ -1,0 +1,37 @@
+\documentclass[11pt]{report}
+
+\usepackage[font=small,format=plain,labelfont=bf,up,textfont=it,up]{caption}
+
+\usepackage{pdftexcmds}
+\usepackage{minted}
+\usepackage{verbatim}
+
+\usepackage{etoolbox}
+
+\usemintedstyle{default}
+
+% load the standard settings
+\input{Preamble}
+
+% declare the title - this will go on the cover page and header
+\newcommand{\seriestitle}{AquaQ Analytics}
+\newcommand{\mytitle}{FIX Shared Library}
+
+% start the document
+\begin{document}
+
+% insert the title page and revision history
+\include{TitlePage}
+\include{RevisionHistory}
+
+% insert table of contents
+\tableofcontents
+
+% include the company overview for external documents
+% no need to for internal documents
+\include{CompanyOverview}
+\include{Introduction}
+\include{CompilingAndInstalling}
+
+% finish the document
+\end{document}

@@ -1,0 +1,50 @@
+\usepackage{amsmath, enumerate,verbatim, upquote,fancyvrb,fancyhdr,graphicx,hyperref,draftwatermark,listings,color,courier, caption, float, vhistory, dirtree}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\makeatletter
+\pagestyle{fancy}
+\newcommand{\rmnum}[1]{\romannumeral #1}
+\newcommand{\Rmnum}[1]{\expandafter\@slowromancap\romannumeral #1@}
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+\renewcommand{\chaptermark}[1]{\markboth{\textsc{\large{\thechapter.\ #1}}}{}}
+
+% Watermark
+\SetWatermarkText{AquaQ}
+\SetWatermarkLightness{0.9}
+\SetWatermarkScale{1}
+
+% Colours
+\definecolor{lightgray}{gray}{0.90}
+\definecolor{aquaqgreen}{RGB}{184,235,196}
+\lstset{breaklines=true}
+\lstset{backgroundcolor=\color{aquaqgreen}}
+% \lstset{basicstyle=\scriptsize\ttfamily}
+\lstset{framesep=4pt}
+\lstset{frame=single}
+
+\makeatother
+%\footskip = -10pt
+%\voffset=-10pt
+%\headheight = -10pt
+\textheight =600pt                                          %592pt
+%\textwidth =350pt
+\headwidth=350pt
+\setlength{\headwidth}{410pt}
+
+\marginparwidth = 35pt
+\textwidth=410pt
+\hoffset=-1cm
+
+\widowpenalty=300
+\clubpenalty=300
+
+\fancyfoot{}
+\fancyfoot[C] {\thepage}
+\fancyfoot[R]{\textcopyright AquaQ Analytics Limited \the\year\ }
+
+\lhead{\leftmark}
+%\chead{}
+\rhead{\mytitle}
+
+
+

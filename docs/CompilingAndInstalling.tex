@@ -1,0 +1,573 @@
+\chapter{System Setup}
+
+\definecolor{bg}{rgb}{1,1,1}
+\definecolor{fg}{rgb}{0.2,0.2,0.2}
+\newminted{q}{mathescape, frame=lines,framesep=3mm,bgcolor=bg,fontsize=\footnotesize,label=q/kdb+}
+\newminted{xml}{mathescape, frame=lines, framesep=3mm, bgcolor=bg, fontsize=\footnotesize,label=xml}
+\newminted{ini}{mathescape, frame=lines, framesep=3mm, bgcolor=bg, fontsize=\footnotesize,label=ini/config}
+
+\section{Requirements}
+
+\subsection{CMake}
+This project uses CMake 2.6+ \footnote{\url{http://www.cmake.org/}}to support building across multiple platforms. The CMake toolchain will generate the build artefacts required for your platform automatically. This will typically leave just one or two commands to run manually depending on the platform that you are
+using.
+
+\subsection{Python (Optional)}
+A q file containing some mappings that can be useful when building FIX messages is provided in the bin/ folder. This file has been generated based on the constants that are present in the quickfix libary headers using the CppHeaderParser\footnote{\url{https://pypi.python.org/pypi/CppHeaderParser/}} library. you should make sure that either Python 2.7+ or Python 3.3+ is installed if you wish to regenerate these constants based on the contents of the header files.
+
+\subsection{KDB+}
+
+\section{Building the Shared Library}
+
+The first step is to build the quickfix library itself for the target platform. The instructions for this can be found either on the GitHub page or on the QuickFIX website\footnote{\url{http://www.quickfixengine.org/quickfix/doc/html/building.html}}. It may be difficult to build a 32 bit binary on a 64 bit environment and vice versa. 
+
+This library uses CMake in order to enable cross platform builds.
+
+\section{Configuration}
+\subsection{Adding New Message Schemas}
+
+After building and installing the shared library, you should see a bin/config folder that sits
+alongside the shared library. This contains all of the core configuration for both acceptors
+and initiators. The \verb|spec| folder contains all of the schemas for each version of FIX that is
+supported.
+
+\begin{qcode}
+~/fixengine/bin/config/spec> ls
+FIX.4.0.xml
+FIX.4.1.xml
+FIX.4.2.xml
+FIX.4.3.xml
+FIX.4.4.xml
+FIX.5.0.xml
+FIX.5.0.SP1.xml
+CUSTOM.xml
+\end{qcode}
+
+The format of the schema file will be explained by examining the FIX 4.0 XML file.
+
+\begin{xmlcode}
+<fix major='4' type='FIX' servicepack='0' minor='0'>
+	<header>
+		<!-- Header Fields (Described in more detail below) -->
+	</header>
+	<messages>
+		<!-- Message Fields (Described in more detail below) -->
+	</messages>
+	<trailer>
+		<field name='SignatureLength' required='N' />
+		<field name='Signature' required='N' />
+		<field name='CheckSum' required='N' />
+	</trailer>
+</fix>
+\end{xmlcode}
+
+\begin{qcode}
+/ Creating an acceptor that will validate all of its messages against the FIX.4.4.xml schema file.
+.fix.create[`acceptor;(enlist `version)!enlist `FIX.4.4]
+/ Creating a second acceptor that is on a different port and 
+\end{qcode}
+
+\subsection{Modifying the default configuration file}
+There are two configuration files in the \verb|config| directory of the FIX engine. The first
+is \verb|acceptor-config.xml| which contains configuration that is specific to all the acceptors
+and the \verb|initiator-config.xml| which contains configuration that is specific to all the initiators. Both of these xml files are made up of the same sections \verb|[DEFAULTS]| and \verb|[SESSION]|. 
+
+The \verb|DEFAULTS| section of the of the configuration is where you can specify the common settings
+for all the acceptors that will be launched in the q session.
+
+\begin{inicode}
+# Defaults that should be shared across all sessions
+# (they can be overridden on a per-session basis)
+[DEFAULT]
+BeginString=FIX.4.4
+ConnectionType=acceptor
+ReconnectInterval=60
+SenderCompID=sellside
+TargetCompID=buyside1
+SocketNodelay=Y
+\end{inicode}
+
+The \verb|SESSION| sections of the configuration correspond to a specific acceptor that should be 
+launched automatically when the library is loaded. You may have multiple sessions configured as long
+as they do not share a SessionID or try to bind to the same port. The SessionID is made up of the \verb|BeginString|, \verb|SenderCompID| and \verb|TargetCompID| and the binding port is defined by
+\verb|SocketAcceptPort|. For initiators, you can have multiple connections to the same SessionID open as long as your specify the SessionQualifier. 
+
+\begin{inicode}
+[SESSION]
+# Statically creating an acceptor from a configuration file
+StartTime=00:30:00
+EndTime=23:30:00
+ReconnectInterval=30
+HeartBtInt=15
+TargetCompID=buyside1_44
+SocketAcceptPort=7070
+SocketReuseAddress=Y
+DataDictionary=config/spec/FIX44.xml
+AppDataDictionary=config/spec/FIX44.xml
+FileStorePath=store
+PersistMessages=Y
+FileLogPath=logs
+\end{inicode}
+
+\subsection{Enabling/Disabling Message Verification}
+
+\subsection{Logging}
+Logging is supported via directing message to stdout, to a flat file, or to a MySQL and PostgreSQL databases. This logging can be configured in the ini files from the previous section or at runtime. If you scroll to the bottom of the configuration file, you should see three sections for each.
+
+\begin{inicode}
+	##############################################
+	#       Plain Text Logging Configuration 
+	##############################################
+	FileLogPath=logs
+	FileLogBackupPath=logs/backup
+	FileStorePath=store
+\end{inicode}
+
+\begin{inicode}
+	##############################################
+	#       MySQL Logging Configuration 
+	##############################################
+	MySQLLogDatabase=quickfix
+	MySQLLogUser=root
+	MySQLLogPassword=pass
+	MySQLLogHost=localhost
+	MySQLLogPort=20017
+	MySQLLogUserConnectionPool=N
+\end{inicode}
+
+The settings for a PostgreSQL database configuration mirror those for the MySQL
+version. Again, it is possible to split the guaranteed delivery storage from your
+debug logs by explicitly specifying the variables e.g \verb|PostgreSQLStoreDatabase|
+alongside \verb|PostgreSQLLogDatabase|.
+
+\begin{inicode}
+	##############################################
+	#       PostgreSQL Logging Configuration 
+	##############################################
+	PostgreSQLStoreDatabase=quickfix
+	PostgreSQLStoreUser=root
+	PostgreSQLStorePassword=pass
+	PostgreSQLStoreHost=localhost
+	PostgreSQLStorePort=20017
+	PostgreSQLStoreUseConnectionPool=N
+\end{inicode}
+
+\subsection{Guaranteed Delivery/Message Replay}
+
+\begin{inicode}
+	# Defaults that should be shared across all sessions
+	# (they can be overridden on a per-session basis)
+	[DEFAULT]
+	BeginString=FIX.4.4
+	ConnectionType=acceptor
+	ReconnectInterval=60
+	SenderCompID=sellside
+	TargetCompID=buyside1
+	SocketNodelay=Y
+	
+	[SESSION]
+	# Statically creating an acceptor from a configuration file
+	StartTime=00:30:00
+	EndTime=23:30:00
+	ReconnectInterval=30
+	HeartBtInt=15
+	TargetCompID=buyside1_44
+	SocketAcceptPort=7070
+	SocketReuseAddress=Y
+	DataDictionary=config/spec/FIX44.xml
+	AppDataDictionary=config/spec/FIX44.xml
+	FileStorePath=store
+	PersistMessages=Y
+	FileLogPath=logs
+\end{inicode}
+
+\section{Start Up \& Testing}
+
+\subsection{Running the Unit Tests}
+The run script can take a parameter that indicates whether or not the unit tests should be run. The tests
+will print their output to the screen and also return an exit code that indicates if they were successful.
+If you wish to add your own tests to the suite, just modify the tests.csv file that is located in the 
+\verb|test/q| directory.
+
+\subsection{Loading the Shared Library}
+In order to load the shared library, we will use the dynamic load (2:) function. This function is dyadic
+and takes a name/path to a library as its first argument and a list as its second argument. The list should
+contain the name of the function that you wish to dynamically link against and the number of arguments that
+it takes. The library provides a bootstrapping function: \mintinline{c}{extern "C" K load_library(K x);}
+
+This bootstrapping function will return a dictionary that maps symbols to dynamically linked functions. The
+function will erase the contents of any namespace that it is assigned to, so if you want to add additional
+variables or functions, you will need to place them after the code that loads the shared library.
+
+
+\begin{qcode}
+/ We load the entire library in one go by loading the load_library
+/ function and then executing it.
+.fix:(`:lib/fixengine 2:(`load_library;1))`
+\end{qcode}
+
+\begin{qcode}
+/ Link against the create_adaptor function of the shared
+/ library called fixengine.[so|dll] that is located in the
+/ in the lib/ directory relative to the q session.
+.fix.create:`:lib/fixengine 2:(`create_adaptor;2)
+
+/ We can then use the .fix.create function just as though it was
+/ built into kdb+
+.fix.create[`acceptor;()!()]
+\end{qcode}
+
+\subsection{Starting Servers (Acceptors)}
+
+\begin{qcode}
+/ We can then use the .fix.create function just as though it was
+/ built into kdb+
+.fix.create[`acceptor;()!()]
+.fix.create[`acceptor;(enlist `port)!enlist 7072]
+.fix.create[`acceptor;`port`version!(7072;`FIX.4.2)]
+\end{qcode}
+
+It is also possible to configure the acceptors from an ini file that is located in the configuration directory. The syntax for these files is described in a previous section.
+An example configuration file that will launch two acceptors, one on port 7070 and another
+on port 7071 is shown below.
+
+\begin{inicode}
+# Define some settings that will be common between the two individual 
+# sessions.
+[Default]
+BeginString=FIX.4.4
+ConnectionType=acceptor
+DataDictionary=config/spec/FIX.4.4.xml
+AppDataDictionary=config/spec/FIX.4.4.xml
+PersistMessages=Y
+SocketNodelay=Y
+
+# Create the first session -- remembering to define a unique $\underline{TargetCompID}$,
+# $\underline{SenderCompID}$ & $\underline{SocketAcceptPort}$.
+[Session]
+TargetCompID=SessionOneSellerID
+SenderCompID=SessionOneBuyerID
+SocketAcceptPort=7070
+StartTime=00:30:00
+EndTime=23:30:00
+
+# Create the second session -- again we need to ensure our SessionID (which is
+# in the format BeginString:SenderCompID->TargetCompID) is unique and that we
+# have our own port.
+[Session]
+TargetCompID=SessionTwoBuyerID
+SenderCompID=SessionTwoSellerID
+SocketAcceptPort=7071
+StartTime=05:45:00
+EndTime=21:00:00
+\end{inicode}
+
+\subsection{Starting Clients (Initiators)}
+
+\begin{qcode}
+/ The initiator is built in the same fashion as the the acceptor
+/ aside from the first parameter. Most of the arguments to the
+/ dictionary are the same -- any that are not relevant to the 
+/ initiator will be ignored.
+.fix.create[`initiator;()!()]
+.fix.create[`initiator;(enlist `port)!enlist 7072]
+.fix.create[`initiator;`port`version!(7073;`FIX.4.2)]
+\end{qcode}
+
+TODO :: Add that it is possible to configure an initiatior to start up statically from the config file
+
+\subsection{Sending a FIX Message}
+In order to send a FIX message from an initiator to an acceptor, you can use the \texttt{.fix.send[sid;dictionary]} function. When you first created an initiator, 
+the function returned an integer that represents the \textbf{session id}. You can
+pass this identifier as the first parameter to the \mintinline{q}{.fix.send} function
+to indicate who the message should be sent to.
+
+\begin{qcode}
+/ Create an acceptor and an initiator which default to 
+/ connecting over localhost. The initiator will return
+/ an sid that can be used to send messages from the
+/ initiator to the acceptor.
+q) .fix.listen[`TargetCompID`SenderCompID!`BuySideID`SellSideID]
+q) .fix.connect[`SenderCompID`TargetCompID!`BuySideID`SellSideID]
+/ We can then send the message using the sid (assuming that
+/ the message dictionary has been defined beforehand)
+q) message: (8 11 35 46 ...)!(`FIX.4.4;175;`D;8 ...)
+q) .fix.send[message]
+\end{qcode}
+
+The FIX message itself should just be a dictionary that maps integers (that correspond to the tags defined
+in the specification) to kdb+ types. The shared library will handle to conversion of the kdb+ type to the
+format expected by FIX before sending. You can also just pass symbols with the data pre-formatted to the dictionary and the library will pass it straight through to the FIX engine.
+
+\begin{qcode}
+q) message:(8 11 35 46 ...)!(`FIX.4.4;175;`D;8; ...)
+\end{qcode}
+
+Some extra constants are provided to make the building of FIX messages a bit easier. The example below shows how you would typically send a NewOrderSingle("D") message using the symbol format:
+
+\begin{qcode}
+.fix.send_new_single_order: {[sid]
+
+	message:()!()
+	message[.fix.tags.BeginString]: `$"FIX.4.4"
+	message[.fix.tags.SenderCompID]: `SellSideID;
+	message[.fix.tags.TargetCompID]: `BuySideID;
+	message[.fix.tags.MsgType]: `D;
+	message[.fix.tags.ClOrdID]: `$"SHD2015.04.17"
+	message[.fix.tags.Side]: `1;
+	message[.fix.tags.TransactTime]: `$"20150417-17:38:21";
+	message[.fix.tags.OrdType]: `1;
+
+	.fix.send[sid; message];
+}
+\end{qcode}
+
+\subsection{Receiving a FIX Message}
+
+To receive a FIX message, you will want to use the \textbf{.fix.fromapp} callback. This callback should be defined with a single argument: e.g. \mintinline{q}{.fix.fromapp:{[dict] ... }}. The fromapp callback will
+be triggered for every \textit{non-administrative} message that is received. You should check the message type field of the FIX version and Message Type of the dictionary which will be always present.
+
+\begin{qcode}
+/ Creating a callback that will just print out the dictionary
+/ to console.
+q) .fix.fromapp{[dict] 0N!dict; }
+...
+q)
+/ Sample output when the callback is triggered
+8|  `FIX.4.4
+9|  112
+35| `D
+34| 188
+49| `SellSideID
+...
+\end{qcode}
+
+\chapter{Shared Library API}
+\section{Functions}
+
+\subsection{.fix.setdefaults}
+\label{func:setdefaults}
+
+The .fix.setdefaults function is used to override any settings in the configuration file at runtime. It takes
+a dictionary of symbols -> kdb+ types and will convert the keys to uppercase before storing them in the settings.
+This means that the keys are case insensitive and also so that it is consistent with how the rest of the settings
+are stored in quickfix.
+
+\begin{figure}[H]
+\begin{qcode}
+q) .fix.setdefaults[(enlist `SenderCompID)!(enlist `NewCompID)]
+\end{qcode}
+\end{figure}
+
+Any keys that are not relevant to the acceptors or initiators will be still stored in
+the defaults dictionary, but ignored by the library. As long as the keys of the dictionary are a list of symbols, then this call will always succeed. 
+
+\subsection{.fix.getdefaults}
+\label{func:getdefaults}
+
+The .fix.getdefaults functions just returns a dictionary of symbols -> symbols that contains a merged view of the
+configuration files and the global default set via .fix.setdefaults. The values that have been set using .fix.setdefaults
+take precedence over the configuration file settings.
+
+\begin{minted}[mathescape,frame=lines,framesep=3mm,bgcolor=bg]{q}
+q) .fix.getdefaults[]
+APPDATADICTIONARY| config/spec/FIX.4.4.xml
+BEGINSTRING      | FIX.4.4
+CONNECTIONTYPE   | acceptor
+DATADICTIONARY   | config/spec/FIX.4.4.xml
+ENDTIME          | 23:30:00
+FILELOGBACKUPPATH| logs/backup
+FILELOGPATH      | logs
+FILESTOREPATH    | store
+HEARTBTINT       | 15
+PERSISTMESSAGES  | Y
+RECONNECTINTERVAL| 60
+SOCKETACCEPTPORT | 7070
+SOCKETNODELAY    | Y
+STARTTIME        | 00:30:00
+\end{minted}
+
+\subsection{.fix.listen}
+\label{func:listen}
+
+The .fix.listen function will create an acceptor that can bind to a socket and communicate with initiators. If it is
+passed no arguments it will take its arguments from the configuration file and the global runtime defaults. Any arguments
+that are not relevant to quickfix will just be ignored.
+
+\begin{figure}[H]
+\begin{qcode}
+/ This creates an acceptor with all the default arguments.
+.fix.listen[] 
+/ We can also override the different options 
+.fix.listen[(enlist `BeginString)!enlist `FIX.4.4]
+.fix.listen[`SenderCompID`TargetCompID!`BuySideID`SellSideID]
+\end{qcode}
+\end{figure}
+
+\begin{inicode}
+BeginString      # The FIX version to use (e.g FIX.4.4 or FIX.5.0)
+SenderCompID     # Your ID as agreed with the counterparty
+TargetCompID     # The counterparty ID
+SessionQualifier # Used to differentiate between multiple sessions.
+ConnectionType   # Can be either acceptor or initiator.
+StartTime        # The time that the session should become active every day.
+EndTime          # The time that the session should deactivate at every day.
+StartDay
+EndDay
+UseDataDictionary # If set to N, then message validation will be disabled.
+DataDictionary    # The data dictionary to use for validation.
+\end{inicode}
+
+\subsection{.fix.connect}
+\label{func:connect}
+
+The \mintinline{q}{.fix.connect} function will create an initiator that can connect to acceptors, which could be created using \mintinline{q}{.fix.listen} (section \ref{func:listen}) or be provided by a counterparty. If the \mintinline{q}{`BeginString} property is set and \mintinline{q}{`DataDictionary}
+is not in the defaults, then we automatically set the \mintinline{q}{`DataDictionary},\mintinline{q}{`AppDataDictionary} to match the begin string so we can enable automatic message validation.
+
+\begin{figure}[H]
+\begin{qcode}
+.fix.connect[]
+.fix.connect[`BeginString`TargetCompId!`FIX.4.2`BuySideID]
+\end{qcode}
+\caption{Connecting to a fix adaptor using connecting to a counterparty fix adaptor}
+\end{figure}
+
+The function takes either no arguments (in which case it will pull all of its configuration from the default config file), or a dictionary of options that
+should be used in place of the defaults. If the connection is not successful, the
+initiator will continue to try to connect to the until.
+
+\subsection{.fix.send}
+\label{func:send}
+
+The \mintinline{q}{.fix.send} function takes a dictionary that maps long integers to any other kdb+ type. The dictionary should contain all the correct FIX tags and a session associated with the TargetCompID and the SenderCompID should exist. The session should have been created within the same kdb+ instance using \mintinline{q}{.fix.connect} (section \ref{func:connect}) or \mintinline{q}{.fix.listen} (section \ref{func:listen}). If a session that is associated with the message doesn't exist, then a 'session error will be raised and a more detailed message will be written to stderr.
+
+\begin{figure}[H]
+\begin{qcode}
+q) message:(8 35 46 ...)!(`FIX.4.4;`D;`SellerID ...)
+q) .fix.send[message]
+\end{qcode}
+\caption{Sending a FIX message by creating a dictionary and filling it with tags.}
+\end{figure}
+
+The \mintinline{q}{.fix.send} function will use the BeginString, SenderCompID, and TargetCompID fields in order to lookup which session the message is intended for.
+This means that these three fields must be set in every message dictionary. 
+
+If the message has an invalid header or doesn't contain all the required fields, then a `config error will be raised in kdb+ and a more detailed error message will be sent to stderr. The validation is performed by the FIX engine that is recieving the message
+and not locally.
+
+\subsection{.fix.onrecv}
+\label{func:onrecv}
+
+The \mintinline{q}{.fix.onrecv} function can be defined to take a dictionary and will be called for each non-administrative message that is recieved (i.e. it won't be called for heartbeats, login, logout as these should be automatically handled by the quickfix library). It will typically be called after one of the participants in a session has used \mintinline{q}{.fix.send} (section \ref{func:send}). 
+
+\begin{figure}[H]
+\begin{qcode}
+/ Defining a handler that will just print the dictionary to
+/ screen. It will be called each time a non-administrative
+/ message is recieved.
+q) .fix.onrecv:{[dict] show dict; }
+...
+8 | FIX.4.4
+9 | 112
+35| D
+34| 250
+49| SellSideID
+\end{qcode}
+\caption{Recieving a FIX message using the .fix.onrecv handler. Each FIX field is mapped to a dictionary entry for easy consumption. }
+\end{figure}
+
+You may add any logic that you want inside the callback function to handle the dictionary, including sending response messages, disconnecting clients or storing
+the data in a kdb+ database.
+
+\subsection{.fix.getsessions}
+\label{func:getsessions}
+
+The .fix.getsessions function returns a table of all the currently running sessions within the q process and some of their configuration settings. A session corresponds
+to a single acceptor or initiator that has been launched with \mintinline{q}{.fix.listen} (section \ref{func:listen}) or \mintinline{q}{.fix.connect} (section \ref{func:connect}). Sessions that are no longer
+running will be removed from this table.
+
+\begin{figure}[H]
+\begin{qcode}
+/ The .fix.getsessions function returns a standard kdb+ table containing the details
+/ of all the active sessions.
+q) .fix.getsessions[]
+beginString senderCompID targetCompID sessionQualifier isInitiator ...
+------------------------------------------------------------------ ...
+FIX.4.4     BuySideID    SellSideID                    0           ...
+FIX.4.4     SellSideID   BuySideID    SB2015050100     1           ...
+
+/ We can query the contents of the table to extract all the sessions that are using
+/ FIX 4.4 for example.
+q) select senderCompID, targetCompID from .fix.getsessions[] 
+		where beginString = `$"FIX.4.4"
+\end{qcode}
+\caption{Viewing and querying the FIX session table}
+\end{figure}
+
+\section{Enumerations}
+\subsection{.fix.tags}
+The .fix.tags dictionary has been built from the C++ headers in order to make building/decoding FIX messages by hand easier. To load this dictionary just load
+the fixenums.q script into your session \textbf{after} loading the shared library.\\
+
+\begin{figure}[H]
+\begin{qcode}
+q) .fix.tags
+               | ::
+BeginSeqNo     | 7
+BeginString    | 8
+BodyLength     | 9
+CheckSum       | 10
+EndSeqNo       | 16
+MsgSeqNum      | 34
+MsgType        | 35
+...
+
+/ We can look up which integer maps to a specific tag e.g. $\textbf{BeginString}$
+q) .fix.tags.BeginString
+8
+
+/ A reverse lookup can also be performed using the find ($\textbf{?}$) 
+/ operator as each integer maps to a single tag.
+q) .fix.tags?8
+`BeginString
+\end{qcode}
+\caption{Using the .fix.tags dictionary to map between the integer form \& the human readable representation}
+\label{fig:tags}
+\end{figure}
+
+The \verb|fixenums.q| file has been generated by a python script located in
+\verb|src/python| in the project. To create a new version of the \verb|fixenums.q| file, copy the headers from the \verb|include/quickfix| directory into the same
+directory as the python script and then run \textbf{parseheaders.py}.
+
+\subsection{.fix.types}
+	maps to the types that are associated with each tag
+
+\subsection{.fix.values}
+
+The values dictionary contains several nested dictionarys that contain constants that
+have been defined in the standard. These constants should be used where possible in order to remain
+portable. It is also possible to use these fields to "decode" the FIX messages as before using the
+find operator.
+
+\begin{qcode}
+q) .fix.values.msgtype
+               | ::
+Heartbeat      | `0
+TestRequest    | `1
+ResendRequest  | `2
+Reject         | `3
+...
+q) .fix.values.msgencoding
+               | ::
+ISO2022JP      | `ISO-2022-JP
+EUCJP          | `EUC-JP
+...
+q) .fix.values.orderstatus
+               | ::
+New            | `0
+PartiallyFilled| `1
+Filled         | `2
+DoneForDay     | `3
+Canceled       | `4
+PendingNew     | `A
+\end{qcode}
