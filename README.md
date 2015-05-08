@@ -75,7 +75,9 @@ q) .fix.listen[`SocketAcceptPort`SenderCompID`TargetCompID!(7070;`SellSideID;`Bu
 q) .fix.connect[`SocketConnectPort`SenderCompID`TargetCompID!(7070;`BuySideID;`SellSideID)]
 ```
 
-You should read the accompanying documentation for the full API.
+You should read the accompanying documentation for the full API and details of how to use the FIXimulator tool
+for testing purposes. FIXimulator can be downloaded from [here][fiximulatorlink] and the source code can be found
+[here][fiximulatorlink].
 
 Acknowledgements
 ----------------
@@ -85,5 +87,7 @@ This product includes software developed by quickfixengine.org ([http://www.quic
 [aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
 [aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
 [gitpdfdoc]: https://github.com/AquaQAnalytics/kdb-fix-adaptor/blob/master/docs/FixSharedLibrary.pdf
-[quickfixrepo]: https://github.com/quickfix/quickfix 
+[quickfixrepo]: https://github.com/quickfix/quickfix/
 [quickfixlink]: http://www.quickfixengine.org/ 
+[fiximulatorlink]: http://fiximulator.org/
+[fiximulatorcode]: https://code.google.com/p/fiximulator/
