@@ -577,16 +577,16 @@ the FIXimulator will recieve the message, validate it and respond. It is also po
 \begin{qcode}
 q) .fix.send_new_single_order:{
 	message:()!();
-	message[.fix.tags.BeginString]:
-	message[.fix.tags.SenderCompID]:
-	message[.fix.tags.TargetCompID]:
-	message[.fix.tags.MsgType]:
-	message[.fix.tags.ClOrdID]:
-	message[.fix.tags.Symbol]:
-	message[.fix.tags.Side]: `1;
-	message[.fix.tags.HandlInst]: `2;
-	message[.fix.tags.TransactTime]: `$"20150416-17:38:21";
-	message[.fix.tags.OrdType]: `1;
+	message[.fix.tags.BeginString]: `FIX.4.2;
+	message[.fix.tags.SenderCompID]: `BANZAI;
+	message[.fix.tags.TargetCompID]: `FIXIMULATOR;
+	message[.fix.tags.MsgType]: `D;
+	message[.fix.tags.ClOrdID]: "SHD2015.04.04";
+	message[.fix.tags.Symbol]: `TESTSYM;
+	message[.fix.tags.Side]: 1;
+	message[.fix.tags.HandlInst]: 2;
+	message[.fix.tags.TransactTime]: .z.p;
+	message[.fix.tags.OrdType]: 1;
 	.fix.send[message]; }
 q) .fix.send_new_single_order[]
 "--- START RECEIVED MESSAGE ---"
