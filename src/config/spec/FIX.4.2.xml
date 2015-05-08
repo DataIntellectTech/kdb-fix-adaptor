@@ -1693,11 +1693,12 @@
    <value enum='M' description='MEDIUM' />
   </field>
   <field number='26' name='IOIRefID' type='STRING' />
-  <field number='27' name='IOIShares' type='STRING'>
+  <field number='27' name='IOIShares' type='STRING'/>
+<!--
    <value enum='L' description='LARGE' />
    <value enum='M' description='MEDIUM' />
    <value enum='S' description='SMALL' />
-  </field>
+  </field> -->
   <field number='28' name='IOITransType' type='CHAR'>
    <value enum='C' description='CANCEL' />
    <value enum='N' description='NEW' />
