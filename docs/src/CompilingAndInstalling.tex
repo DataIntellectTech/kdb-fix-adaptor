@@ -100,11 +100,14 @@ FIX.5.0.SP1.xml
 
 \begin{figure}[H]
 \begin{qcode}
-/ Creating an acceptor that will validate all of its messages against the FIX.4.4.xml schema file.
-.fix.create[`acceptor;(enlist `version)!enlist `FIX.4.4]
-/ Creating a second acceptor that is on a different port and 
+/ Creating an acceptor that will validate all of its messages against the FIX.4.2.xml schema file.
+/ If a DataDictionary is not specified explicitly, it will be automatically populated by looking for
+/ the BeginString.
+q) .fix.listen[(enlist `BeginString)!enlist `FIX.4.2]
+/ Creating a second acceptor that uses a different schema for validation than the BeginString indicates.
+q) .fix.listen[(enlist `DataDictionary)!enlist `$"config/spec/customschema.xml"]
 \end{qcode}
-\caption{}
+\caption{Creating fix adapters with default and custom schemas}
 \end{figure}
 
 \subsection{Modifying the default configuration file}
@@ -239,12 +242,12 @@ alongside \verb|PostgreSQLLogDatabase|.
 	##############################################
 	#       PostgreSQL Logging Configuration 
 	##############################################
-	PostgreSQLStoreDatabase=quickfix
-	PostgreSQLStoreUser=root
-	PostgreSQLStorePassword=pass
-	PostgreSQLStoreHost=localhost
-	PostgreSQLStorePort=20017
-	PostgreSQLStoreUseConnectionPool=N
+	PostgreSQLLogDatabase=quickfix
+	PostgreSQLLogUser=root
+	PostgreSQLLogPassword=pass
+	PostgreSQLLogHost=localhost
+	PostgreSQLLogPort=20017
+	PostgreSQLLogUseConnectionPool=N
 \end{inicode}
 \caption{Example PostgreSQL Logging Configuration Settings}
 \end{figure}
@@ -258,10 +261,27 @@ The FIX engine supports guaranteed delivery and message replay without any extra
 [DEFAULT]
 # Make all acceptors/initiators store their message logs in a store folder.
 LogStorePath=store
-LogStorePath=
 \end{inicode}
 \caption{Configuring guaranteed delivery via the INI files}
 \end{figure}
+
+All of this functionality is integrated into the FIX engine, so you don't need to worry about manually sending requests for missed data. The FIX engine will ensure all updates arrive in the correct order according to the sequence number.
+
+\begin{figure}[H]
+\begin{inicode}
+MySQLStoreDatabase=quickfix
+MySQLStoreUser=root
+MySQLStorePassword=pass
+MySQLStoreHost=localhost
+MySQLStorePort=20017
+MySQLStoreUserConnectionPool=N
+\end{inicode}
+\caption{Storing message updates in a MySQL database rather than a in plain text}
+\label{fig:sql-store}
+\end{figure}
+
+It is also possible to use a database as a message store by taking the logging examples from above
+and replacing the 'Log' with 'Store' as show in figure \ref{fig:sql-store}.
 
 \section{Start Up \& Testing}
 
