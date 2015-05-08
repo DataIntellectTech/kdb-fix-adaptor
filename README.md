@@ -80,9 +80,10 @@ You should read the accompanying documentation for the full API.
 Acknowledgements
 ----------------
 
-This product includes software developed by quickfixengine.org (\url{http://www.quickfixengine.org/}).
+This product includes software developed by quickfixengine.org ([http://www.quickfixengine.org/][quickfixlink]).
 
 [aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
 [aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
 [gitpdfdoc]: https://github.com/AquaQAnalytics/kdb-fix-adaptor/blob/master/docs/FixSharedLibrary.pdf
 [quickfixrepo]: https://github.com/quickfix/quickfix 
+[quickfixlink]: http://www.quickfixengine.org/ 
