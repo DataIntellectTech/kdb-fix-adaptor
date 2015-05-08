@@ -446,8 +446,7 @@ Some extra constants are provided to make the building of FIX messages a bit eas
 
 \begin{figure}[H]
 \begin{qcode}
-.fix.send_new_single_order: {[sid]
-
+.fix.send_new_single_order: {[]
 	/ The message itself is just a dictionary containing the data that you
 	/ wish to send to the FIX session. The ordering of the tags doesn't matter
 	/ as the FIX engine will sort them into the order in the specification before
@@ -641,6 +640,8 @@ If the message we get back is successful, then we should get a message with a ty
 tool fills the orders. You can also use the "Orders" tab of the FIXimulator tool to respond to each of
 the orders manually.
 
+You should also start the \verb|Automated Executor| by clicking the start button in that section of the \verb|Load| tab too.
+
 \begin{figure}[H]
 \centering
 \fbox{\includegraphics[scale=0.75]{figures/FIXimulator-application-messages.png}}
@@ -655,7 +656,14 @@ don't follow the defined schema).
 
 \section{Integration with TorQ}
 
-
+It is common for some tick data to be published as FIX messages and it would be useful to store this
+data into kdb+ for analysis. The FIX engine can also be integrated with the AquaQ TorQ framework which provides a production ready tick capture environment. More information on TorQ can be found on the resources section of the AquaQ website\footnote{\url{http://www.aquaq.co.uk/products/}},
+ or on the AquaQ GitHub\footnote{\url{https://github.com/AquaQAnalytics/TorQ}}.
+ 
+The most common scenario would be connecting to a counterparty using an initiator and then using the
+\mintinline{q}{.fix.onrecv} function in order to push the data into kdb+. We can set this up by creating a new process in the processes folder of TorQ, loading the shared library, opening a handle to a tickerplant and then watching for Execution Report messages (which have MsgType = 8). Because we
+receive these messages as a kdb+ dictionary, can easily extract the data that we want to store from
+the message and then push it to the tickerplant.
 
 \chapter{Shared Library API}
 \section{Functions}
