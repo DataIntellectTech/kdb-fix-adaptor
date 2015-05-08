@@ -77,6 +77,11 @@ q) .fix.connect[`SocketConnectPort`SenderCompID`TargetCompID!(7070;`BuySideID;`S
 
 You should read the accompanying documentation for the full API.
 
+Acknowledgements
+----------------
+
+This product includes software developed by quickfixengine.org (\url{http://www.quickfixengine.org/}).
+
 [aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
 [aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
 [gitpdfdoc]: https://github.com/AquaQAnalytics/kdb-fix-adaptor/blob/master/docs/FixSharedLibrary.pdf
