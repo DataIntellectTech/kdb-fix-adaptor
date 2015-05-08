@@ -101,10 +101,11 @@ K send_message(K args)
         int tag = kJ(keys)[i];
         auto value = readAtom(values, i);
  
-        if (tag == 35 || tag == 8 || tag == 49 || tag == 56) 
+        if (tag == 35 || tag == 8 || tag == 49 || tag == 56) {
             message.getHeader().setField(tag, value); 
-        else
+        } else {
             message.setField(tag, value);
+        }
 
         if (8 == tag) {
             beginString = value;
@@ -113,11 +114,8 @@ K send_message(K args)
         } else if (56 == tag) {
             targetCompId = value;
         } 
-
-        // TODO :: Figure out how to get the session qualifier from the message? (perhaps not possible and
-        // we will need to pass a session around to indicate where the message should be sent.
     }
-
+ 
     FIX::Session::sendToTarget(message, senderCompId, targetCompId, sessionQualifier);
     return (K) 0;
 }
@@ -132,7 +130,6 @@ K set_session_args(K args, FIX::Dictionary& session)
     for (auto i = 0; i < keys->n; i++) {
         auto key = std::string(kS(keys)[i]);
         auto value = readAtom(values, i);
-        std::cout << "setting argument (" << key << ", " << value << ")" << std::endl;
         session.setString(key, value);
     }
 
@@ -180,7 +177,7 @@ K create_thread(K args, const std::string& config)
     // if we get anything else.
     if (args->t != 99 && args->t != 101)
         return krr((S) "type");
-   
+ 
     auto settings = new SessionSettings(config);
  
     // Get a copy of the default settings from the ini file and merge it with the
