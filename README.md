@@ -1,1 +1,75 @@
-# kdb-fix-adaptor
+# KDB+ FIX Engine
+
+This is a shared library implementation of a FIX engine that can be easily integrated with kdb+. 
+
+The PDF documentation for this resource can be found [here][gitpdfdoc] and also on the [AquaQ Analytics][aquaqresources]
+website.
+
+Installation & Setup
+--------------------
+
+### Extra Resources
+You will need to download the `q.lib` file from the code.kx.com/svn repository for Windows platforms
+and place it in the lib/w32/ directory. For Linux this step is not required.
+
+This project uses CMake 2.6+ to build across multiple platforms. It has been tested on Linux and
+Windows. Execute the following commands on all platforms to create platform appropriate build
+files within the `build` directory.
+
+```sh
+mkdir build; cd build; cmake ..
+```
+
+### <img src="docs/icons/linux.png" height="16px"> Building on Linux
+
+On Linux, you just need to run make install to complete the build process
+and find the binary output in the `../bin` directory.
+
+```sh
+make install && cd ../bin
+```
+
+### <img src="docs/icons/windows.png" height="16px"> Building on Windows
+
+On Windows platforms you will need to have the msbuild.exe available on your path. CMake creates
+two Visual Studio projects that need to be built. The `INSTALL` project will not modify any of the
+code and will just move the binaries from the `../build` directory to the `../bin` directory. An
+extra `fixengine.lib` file will be produced on Windows, which can be ignored after the build process.
+
+```bat
+msbuild ./ALL_BUILD.vcxproj /p:Configuration=Release
+msbuild ./INSTALL.vcxproj /p:Configuration=Release
+cd ../bin
+```
+
+Running the Examples
+--------------------
+
+The resulting directory after running a build should look like this:
+
+    bin/                    -- contains the libqtoc.[dll/so] library and makeprint.q
+    build/                  -- contains the makefile/visual studio projects
+    include/                -- contains the header files that are used by the libraries
+    lib/                    -- contains the quickfix library & optionally the google test libraries
+    src/                    -- contains the source code
+    test/                   -- contains the unit tests for the source code
+    CMakeLists.txt
+
+Once the build is complete, navigate to the `bin` directory and execute:
+
+    ./run
+
+This is a script that will load the C shared object and bind the functions to the .fix namespace for you. It
+will also automatically start a local FIX acceptor & initiator session and provides an example send new single
+order function to test with. It is also possible to load the shared library into your own session using the
+dynamic load (:2) function:
+
+```apl
+q) .fix:(`:./lib/fixengine 2:(`load_library;1))`
+q) .fix.listen[`SocketAcceptPort`SenderCompID`TargetCompID!(7070;`SellSideID;`BuySideID)]
+q) .fix.connect[`SocketConnectPort`SenderCompID`TargetCompID!(7070;`BuySideID;`SellSideID)]
+```
+
+[aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
+[aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
+[gitpdfdoc]: https://github.com/AquaQAnalytics/kdb-fix-adaptor/blob/master/docs/FixSharedLibrary.pdf
