@@ -16,6 +16,10 @@ This project uses CMake 2.6+ to build across multiple platforms. It has been tes
 Windows. Execute the following commands on all platforms to create platform appropriate build
 files within the `build` directory.
 
+You will need to download and compile the QuickFIX library from [here][quickfixrepo]. You should take
+the resulting binary file that is produced and place it into the `lib` directory that should be created
+alongside the `include` & `src` directories.
+
 ```sh
 mkdir build; cd build; cmake ..
 ```
@@ -53,7 +57,8 @@ The resulting directory after running a build should look like this:
     lib/                    -- contains the quickfix library & optionally the google test libraries
     src/                    -- contains the source code
     test/                   -- contains the unit tests for the source code
-    CMakeLists.txt
+    CMakeLists.txt          -- the build instructions for the entire project
+    README.md               -- this file
 
 Once the build is complete, navigate to the `bin` directory and execute:
 
@@ -70,6 +75,9 @@ q) .fix.listen[`SocketAcceptPort`SenderCompID`TargetCompID!(7070;`SellSideID;`Bu
 q) .fix.connect[`SocketConnectPort`SenderCompID`TargetCompID!(7070;`BuySideID;`SellSideID)]
 ```
 
+You should read the accompanying documentation for the full API.
+
 [aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
 [aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
 [gitpdfdoc]: https://github.com/AquaQAnalytics/kdb-fix-adaptor/blob/master/docs/FixSharedLibrary.pdf
+[quickfixrepo]: https://github.com/quickfix/quickfix 
