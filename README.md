@@ -1,6 +1,9 @@
 # KDB+ FIX Engine
 
-This is a shared library implementation of a FIX engine that can be easily integrated with kdb+. 
+FIX is one of the most common protocols used within the finance industry. This repository provides a shared library
+implementation of a FIX engine. The accompanying document also describes how to use this library to communicate with
+the FIXimulator tool for testing purposes. The implementation is currently in an alpha state and has not been used in
+a production system to date. Bugs and features requests should be made through GitHub.
 
 The PDF documentation for this resource can be found [here][gitpdfdoc] and also on the [AquaQ Analytics][aquaqresources]
 website.
