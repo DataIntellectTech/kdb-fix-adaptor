@@ -9,6 +9,7 @@ This FIX engine provides many standard features including:
 \begin{description}
 	\item[Easy KDB+ integration] - Getting access to a full suite of FIX engine features is as simple as loading a shared library into your KDB+ application.
 	\item[Supports Standard FIX Versions] - The FIX engine supports all of the FIX standards out of the box and even allows you to use multiple different message formats at the same time.
+	\item[Handling kdb+ types] - The adapter handles kdb+ types within messages, converting to FIX string format on sending and back to kdb+ types on message receipt.
 	\item[Message Validation] - All messages that are received by the FIX engine are validated against a specification before being processed to help simplify your business logic.
 	\item[Custom Message Formats] - The engine supports custom specifications via a simple XML format based on the underlying QuickFIX library.
 	\item[Guaranteed Delivery] - Messages are tracked alongside sequence numbers, so if a client misses a message, it can always be recovered.

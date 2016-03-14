@@ -12,80 +12,89 @@ Installation & Setup
 --------------------
 
 ### Extra Resources
-You will need to download the `q.lib` file from the code.kx.com/svn repository for Windows platforms
-and place it in the lib/w32/ directory. For Linux this step is not required.
+This project uses CMake 3.2+ to support building across multiple platforms and has been tested on Linux. The CMake toolchain will generate the build artefacts required for your platform automatically.
 
-This project uses CMake 2.6+ to build across multiple platforms. It has been tested on Linux and
-Windows. Execute the following commands on all platforms to create platform appropriate build
-files within the `build` directory.
-
-You will need to download and compile the QuickFIX library from [here][quickfixrepo]. You should take
-the resulting binary file that is produced and place it into the `lib` directory that should be created
-alongside the `include` & `src` directories.
-
-```sh
-mkdir build; cd build; cmake ..
-```
+### KDB+
+A recent version of kdb+ (i.e version 3.x) should be used when working with the FIX engine. The free 32-bit version of the software can be downloaded from the [Kx Systems][kxsystemslink] website.
 
 ### <img src="docs/icons/linux.png" height="16px"> Building on Linux
-
-On Linux, you just need to run make install to complete the build process
-and find the binary output in the `../bin` directory.
+The first step is to build the quickfix library itself for the target platform. You will need to copy the quickfix project to the `third_party/quickfix/<version>` directory for the CMake build to find it. For example, if you were building the project against version 1.14.3 of quickfix, your directory layout should look like the version below:
 
 ```sh
-make install && cd ../bin
+$ ls
+/home/aquaq/fix-build/third_party/quickfix/1.14.3
+total 1.4M
+drwxr-xr-x 3 4.0K 2016-01-19 09:31 bin/
+drwxr-xr-x 2 4.0K 2016-01-19 09:31 config/
+drwxr-xr-x 3 4.0K 2016-01-19 09:31 doc/
+drwxr-xr-x 6 4.0K 2016-01-19 09:31 examples/
+...
 ```
 
-### <img src="docs/icons/windows.png" height="16px"> Building on Windows
+This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually.
 
-On Windows platforms you will need to have the msbuild.exe available on your path. CMake creates
-two Visual Studio projects that need to be built. The `INSTALL` project will not modify any of the
-code and will just move the binaries from the `../build` directory to the `../bin` directory. An
-extra `fixengine.lib` file will be produced on Windows, which can be ignored after the build process.
-
-```bat
-msbuild ./ALL_BUILD.vcxproj /p:Configuration=Release
-msbuild ./INSTALL.vcxproj /p:Configuration=Release
-cd ../bin
+```sh
+./package.sh
 ```
 
-Running the Examples
---------------------
+A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files.
 
-The resulting directory after running a build should look like this:
 
-    bin/                    -- contains the libqtoc.[dll/so] library and makeprint.q
-    build/                  -- contains the makefile/visual studio projects
-    include/                -- contains the header files that are used by the libraries
-    lib/                    -- contains the quickfix library & optionally the google test libraries
-    src/                    -- contains the source code
-    test/                   -- contains the unit tests for the source code
-    CMakeLists.txt          -- the build instructions for the entire project
-    README.md               -- this file
+Starting Servers (Acceptors) and Clients (Initiators)
+----------------
 
-Once the build is complete, navigate to the `bin` directory and execute:
+The .fix.create function is common to both starting Acceptors and Initiators. 
 
-    ./run
-
-This is a script that will load the C shared object and bind the functions to the .fix namespace for you. It
-will also automatically start a local FIX acceptor & initiator session and provides an example send new single
-order function to test with. It is also possible to load the shared library into your own session using the
-dynamic load (:2) function:
+The Acceptor is the server side component of a FIX engine that provides some sort of service by binding to a port and accepting messages. To start an acceptor you need to call the .fix.create function with acceptor as the first argument. The second argument may be either an empty list or a specified configuration, e.g :sessions/sample.ini. The .fix.create function called as an acceptor will start a background thread that will receive and validate messages and finally forward them to the .fix.onrecv function if the message is well formed.
 
 ```apl
-q) .fix:(`:./lib/fixengine 2:(`load_library;1))`
-q) .fix.listen[`SocketAcceptPort`SenderCompID`TargetCompID!(7070;`SellSideID;`BuySideID)]
-q) .fix.connect[`SocketConnectPort`SenderCompID`TargetCompID!(7070;`BuySideID;`SellSideID)]
+/ q fix.q
+q) .fix.create[`acceptor;()]
+Defaulting to sample.ini config
+Creating Acceptor
 ```
 
-You should read the accompanying documentation for the full API and details of how to use the FIXimulator tool
-for testing purposes. FIXimulator can be downloaded from [here][fiximulatorlink] and the source code can be found
-[here][fiximulatorlink].
+The Initiator is the client side component of the FIX engine and is intended to be used to connect to acceptors to send messages. To start an initiator you need to call the .fix.create function. This will create a background thread that will open a socket to the target acceptor and allow you to send/receive messages.
+
+```apl
+/ q fix.q
+q) .fix.create[`initiator;`:sessions/sample.ini]
+Creating Initiator
+```
+
+Sending a FIX Message
+--------------------
+
+In order to send a FIX message from an initiator to an acceptor, you can use the .fix.send function. The send is executed synchronously and will either raise a signal upon error, otherwise you can assume that the message has been received successfully by the counterparty.
+
+In order to determine who the message will be sent to, the library will read the contents the message dictionary and look for a session on the same process that matches. The BeginString, SenderCompID and TargetCompID fields must be present in every message for this reason.
+
+```apl
+/ Session 1 - Create an Acceptor
+/ q fix.q
+q) .fix.create[`acceptor;()]
+Defaulting to sample.ini config
+Creating Acceptor
+
+/ Session 2 - Create an Initiator
+/ q fix.q
+q) .fix.create[`initiator;()]
+Defaulting to sample.ini config
+Creating Initiator
+
+/ We can create a dictionary
+/ containing tags and message values
+q) message: (8 11 35 46 ...)!("FIX.4.4";175;enlist "D";enlist "8" ...)
+/ Then send it as a message
+q) .fix.send[message]
+```
+
 
 Acknowledgements
 ----------------
 
 This product includes software developed by quickfixengine.org ([http://www.quickfixengine.org/][quickfixlink]).
+This software is based on ([pugixml library][pugixmllink]). pugixml is Copyright (C) 2006-2015 Arseny Kapoulkine.
 
 [aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
 [aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
@@ -94,3 +103,5 @@ This product includes software developed by quickfixengine.org ([http://www.quic
 [quickfixlink]: http://www.quickfixengine.org/ 
 [fiximulatorlink]: http://fiximulator.org/
 [fiximulatorcode]: https://code.google.com/p/fiximulator/
+[pugixmllink]: http://www.pugixml.org/
+[kxsystemslink]: http://kx.com/software-download.php

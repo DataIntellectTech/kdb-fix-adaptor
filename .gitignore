@@ -1,0 +1,4 @@
+.tmp/
+third_party/quickfix/
+run.sh
+build/

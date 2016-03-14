@@ -1,64 +1,71 @@
-#################################################################################
-# CMake build script for the FIX shared library for kdb+
-#
-# Builds the shared library and associated tests for the library. The tests can be
-# executed by running the runtests executable from the bin/ directory.
-#
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.2)
 
-option(BUILD_TESTS "Setup the c++ & kdb+ tests in the bin/ directory" ON)
-option(BUILD_LIBRARY "Build the shared library & relevant scripts" ON)
-option(REPLACE_SCRIPTS "Copy the scripts in the src/ directory to bin/ on each install" ON)
+###################################################################################
+# CONFIGURATION
+###################################################################################
+set(PROGRAM_NAME          "kdbfix")
+set(PROGRAM_VER           "0.1.3")
+set(PROGRAM_MAIN          "src/main.cxx")
+set(QUICKFIX_VER          "1.14.3")
+set(KX_VER                "3")
+set(BINARY_NAME           "${PROGRAM_NAME}.${PROGRAM_VER}")
 
-project(fixengine CXX C)
-find_package(Threads)
+option(BUILD_BOOST        "build with the boost libraries available on the path"      ON)
+option(BUILD_x86          "build a 32-bit binary instead of the default 64 bit one"   OFF)
+option(BUILD_DEBUG        "build debug versions of the binaries with symbols"         OFF)
+
+project(${BINARY_NAME} CXX C)
+
+add_library(${BINARY_NAME} SHARED 
+	"${CMAKE_SOURCE_DIR}/${PROGRAM_MAIN}" 
+	"${CMAKE_SOURCE_DIR}/third_party/pugixml-1.7/src/pugixml.cpp")
+target_link_libraries(${BINARY_NAME} "quickfix")
 
 include_directories("${CMAKE_SOURCE_DIR}/include")
-link_directories("${CMAKE_SOURCE_DIR}/lib")
-file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
-file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/lib")
+include_directories("${CMAKE_BINARY_DIR}/include")
+include_directories("${CMAKE_SOURCE_DIR}/third_party/kx/include")
+include_directories("${CMAKE_SOURCE_DIR}/third_party/quickfix/${QUICKFIX_VERSION}/include")
+include_directories("${CMAKE_SOURCE_DIR}/third_party/pugixml-1.7/src")
 
-#################################################################################
-# SHARED LIBRARY
-#
-# Build the shared library and copy the required scripts/third party binaries into
-# the bin/ folder. The name of the resulting library is stripped of its lib prefix
-# so that the run.q script will work without modification on all platforms.
-#
-if(BUILD_LIBRARY)
-    file(COPY "src/q/fix.q" DESTINATION "${CMAKE_SOURCE_DIR}/bin")
-    file(COPY "src/q/fixenums.q" DESTINATION "${CMAKE_SOURCE_DIR}/bin")
-    file(COPY "src/run" DESTINATION "${CMAKE_SOURCE_DIR}/bin")
-    file(COPY "src/config" DESTINATION "${CMAKE_SOURCE_DIR}/bin")
-    file(COPY "lib/libquickfix.so.16" DESTINATION "${CMAKE_SOURCE_DIR}/bin/lib")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_LOG_DYN_LINK -Wall -Werror -fno-strict-aliasing -std=c++11 -Os -march=native -DKXVER=${KX_VER} -fpic")
 
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DKXVER=3")
+# Make sure that the build system doesn't add a 'lib' prefix to the shared library
+set_target_properties(${BINARY_NAME} PROPERTIES PREFIX "")
 
-    add_library(fixengine SHARED "src/cpp/FixEngine.cxx" "src/cpp/main.cxx")
-    target_link_libraries(fixengine quickfix)
-    set_target_properties(fixengine PROPERTIES PREFIX "")
-endif()
+execute_process(COMMAND
+    "git" describe --match=NeVeRmAtCh --always --abbrev=40 --dirty
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    OUTPUT_VARIABLE GIT_SHA1
+    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-#################################################################################
-# TESTS
-#
-# Build the testing code that uses Google Test for the C++ side and k4unit for the
-# kdb+ side of the project. No executables are built for the kdb+ side so a script
-# is copied over which will launch both sets of tests and check the results.
-#
-if(BUILD_TESTS)
-    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/test")
+execute_process(COMMAND
+    "git" log -1 --format=%ad --date=local
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    OUTPUT_VARIABLE GIT_DATE
+    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-    file(COPY "test/q/k4unit.q" DESTINATION "${CMAKE_SOURCE_DIR}/bin/test")
-    file(COPY "test/q/runtests.q" DESTINATION "${CMAKE_SOURCE_DIR}/bin/test")
-    file(COPY "test/q/tests.csv" DESTINATION "${CMAKE_SOURCE_DIR}/bin/test")
+execute_process(COMMAND
+    "date"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    OUTPUT_VARIABLE BUILD_DATE
+    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-    add_executable(runtests "test/cpp/main.cxx")
-    target_link_libraries(runtests gtest gtest_main ${CMAKE_THREAD_LIBS_INIT})
-endif()
+# Generate a configuration file that will contain all of the build variables used by CMake
+configure_file("${CMAKE_SOURCE_DIR}/config.h" "${CMAKE_BINARY_DIR}/include/config.h")
+configure_file("${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_BINARY_DIR}/README.md")
+configure_file("${CMAKE_SOURCE_DIR}/LICENSE.md" "${CMAKE_BINARY_DIR}/LICENSE.md")
+configure_file("${CMAKE_SOURCE_DIR}/src/config/fix.q" "${CMAKE_BINARY_DIR}/fix.q")
 
-INSTALL(TARGETS fixengine DESTINATION "${CMAKE_SOURCE_DIR}/bin/lib")
-INSTALL(TARGETS runtests DESTINATION "${CMAKE_SOURCE_DIR}/bin/test")
+file(COPY "${CMAKE_SOURCE_DIR}/src/config/spec" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/src/config/log" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/src/config/sessions" DESTINATION "${CMAKE_BINARY_DIR}")
 
-add_custom_command(TARGET fixengine POST_BUILD
-                    COMMAND ln -s ${CMAKE_SOURCE_DIR}/bin/lib/libquickfix.so.16 ${CMAKE_SOURCE_DIR}/bin/lib/libquickfix.so)
+add_custom_target(build_package COMMAND
+    ${CMAKE_COMMAND} -E tar "cfv" "${CMAKE_SOURCE_DIR}/${PROGRAM_NAME}-${PROGRAM_VER}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}.tar.gz"
+    "${CMAKE_BINARY_DIR}/${BINARY_NAME}.so"
+    "${CMAKE_BINARY_DIR}/README.md"
+    "${CMAKE_BINARY_DIR}/LICENSE.md"
+    "${CMAKE_BINARY_DIR}/spec"
+    "${CMAKE_BINARY_DIR}/log"
+    "${CMAKE_BINARY_DIR}/sessions"
+    "${CMAKE_BINARY_DIR}/fix.q")
