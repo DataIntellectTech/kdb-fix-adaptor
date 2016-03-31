@@ -12,7 +12,6 @@
 #include <quickfix/ThreadedSocketInitiator.h>
 #include <quickfix/Log.h>
 #include <quickfix/SessionSettings.h>
-#include <quickfix/fix44/NewOrderSingle.h>
 
 #include "socketpair.h"
 #include <kx/k.h>
