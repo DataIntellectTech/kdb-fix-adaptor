@@ -18,23 +18,27 @@ This project uses CMake 3.2+ to support building across multiple platforms and h
 A recent version of kdb+ (i.e version 3.x) should be used when working with the FIX engine. The free 32-bit version of the software can be downloaded from the [Kx Systems][kxsystemslink] website.
 
 ### <img src="docs/icons/linux.png" height="16px"> Building on Linux
-The first step is to build the quickfix library itself for the target platform. You will need to copy the quickfix project to the `third_party/quickfix/<version>` directory for the CMake build to find it. For example, if you were building the project against version 1.14.3 of quickfix, your directory layout should look like the version below:
+
+Install Quickfix
 
 ```sh
-$ ls
-/home/aquaq/fix-build/third_party/quickfix/1.14.3
-total 1.4M
-drwxr-xr-x 3 4.0K 2016-01-19 09:31 bin/
-drwxr-xr-x 2 4.0K 2016-01-19 09:31 config/
-drwxr-xr-x 3 4.0K 2016-01-19 09:31 doc/
-drwxr-xr-x 6 4.0K 2016-01-19 09:31 examples/
-...
+$ sudo apt-get install g++ automake libtool libxml2 libxml2-dev
+$ git clone https://github.com/quickfix/quickfix
+$ cd quickfix
+$ ./bootstrap
+$ ./configure
+$ make
+$ sudo make install
 ```
+
+Install FIX Library
 
 This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually.
 
 ```sh
-./package.sh
+$ git clone https://github.com/AquaQAnalytics/kdb-fix-adaptor
+$ cd kdb-fix-adaptor
+$ ./package.sh
 ```
 
 A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files.

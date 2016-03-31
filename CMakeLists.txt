@@ -24,7 +24,6 @@ target_link_libraries(${BINARY_NAME} "quickfix")
 include_directories("${CMAKE_SOURCE_DIR}/include")
 include_directories("${CMAKE_BINARY_DIR}/include")
 include_directories("${CMAKE_SOURCE_DIR}/third_party/kx/include")
-include_directories("${CMAKE_SOURCE_DIR}/third_party/quickfix/${QUICKFIX_VERSION}/include")
 include_directories("${CMAKE_SOURCE_DIR}/third_party/pugixml-1.7/src")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_LOG_DYN_LINK -Wall -Werror -fno-strict-aliasing -std=c++11 -Os -march=native -DKXVER=${KX_VER} -fpic")
