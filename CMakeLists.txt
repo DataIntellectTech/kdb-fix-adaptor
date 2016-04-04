@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.2)
 # CONFIGURATION
 ###################################################################################
 set(PROGRAM_NAME          "kdbfix")
-set(PROGRAM_VER           "0.1.3")
+set(PROGRAM_VER           "0.5.1")
 set(PROGRAM_MAIN          "src/main.cxx")
 set(QUICKFIX_VER          "1.14.3")
 set(KX_VER                "3")
@@ -26,7 +26,11 @@ include_directories("${CMAKE_BINARY_DIR}/include")
 include_directories("${CMAKE_SOURCE_DIR}/third_party/kx/include")
 include_directories("${CMAKE_SOURCE_DIR}/third_party/pugixml-1.7/src")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_LOG_DYN_LINK -Wall -Werror -fno-strict-aliasing -std=c++11 -Os -march=native -DKXVER=${KX_VER} -fpic")
+if(BUILD_x86)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32")
+endif(BUILD_x86)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_LOG_DYN_LINK -Wall -Werror -fno-strict-aliasing -std=c++11 -Os -DKXVER=${KX_VER} -fpic")
 
 # Make sure that the build system doesn't add a 'lib' prefix to the shared library
 set_target_properties(${BINARY_NAME} PROPERTIES PREFIX "")

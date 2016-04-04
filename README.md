@@ -44,6 +44,43 @@ $ ./package.sh
 A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files.
 
 
+### Building for 32 bit
+
+In order to build a 32 bit binary on a 64 bit machine you will need to install the following packages
+for Debian/Ubuntu systems (there will be equivalent steps to get a multilib environment set up with
+other distributions):
+
+```sh
+$ sudo apt-get install gcc-multilib g++-multilib
+```
+
+Install Quick Fix (32-bit Build)
+
+Append -m32 to both the compiler and linker flags in quickfix/UnitTest++/Makefile since this is not
+handled by the ./configure step. The updated flags should resemble the versions below:
+
+```sh
+CXXFLAGS ?= -g -m32 -Wall -W -Winline -Wno-unused-private-field -Wno-overloaded-virtual -ansi
+LDFLAGS ?= -m32
+```
+
+Then at the configure step for the quickfix library, you can pass in some flags to build and install
+the 32 bit versions of the library. If you are building in the same directory as you built the 64 bit
+version, then ensure you 'make clean' first:
+
+```sh
+make clean
+./bootstrap
+./configure --build=i686-pc-linux-gnu "CFLAGS=-m32" "CXXFLAGS=-m32" "LDFLAGS=-m32"
+make
+sudo make install
+```
+
+Install FIX Adapter (32-bit Build)
+
+Change the BUILD_x86 option in the CMakeLists.txt from "OFF" to "ON" and then rebuild the package to get
+a 32 bit binary.
+
 Starting Servers (Acceptors) and Clients (Initiators)
 ----------------
 
