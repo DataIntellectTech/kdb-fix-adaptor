@@ -58,8 +58,8 @@ class FixEngineApplication : public FIX::Application
 static void FillFromIterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::Fields::const_iterator end, K* keys, K* values)
 {
     for (auto it = begin; it != end; it++) {
-        J tag = (J) it->first;
-        auto str = it->second.getString().c_str();
+        J tag = (J) it->getTag();
+        auto str = it->getString().c_str();
 
         std::unordered_map<int, std::string>::const_iterator found = typemap.find(tag);
         ja(keys, &tag);
