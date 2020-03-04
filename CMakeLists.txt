@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.2)
 # CONFIGURATION
 ###################################################################################
 set(PROGRAM_NAME          "kdbfix")
-set(PROGRAM_VER           "0.5.1")
+set(PROGRAM_VER           "0.6.0")
 set(PROGRAM_MAIN          "src/main.cxx")
 set(QUICKFIX_VER          "1.14.3")
 set(KX_VER                "3")

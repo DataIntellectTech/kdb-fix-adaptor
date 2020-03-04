@@ -34,7 +34,7 @@
 
 std::string typeconvert(std::string s);
 std::string typedtostring(K x);
-void CreateTypeMap(void);
+void CreateTypeMap(char*);
 K convertmsgtype(std::string field, std::string type);
 std::unordered_map<int,std::string> typemap;
 
@@ -49,10 +49,10 @@ class FixEngineApplication : public FIX::Application
     void onLogout(const FIX::SessionID& sessionID);
     void toAdmin(FIX::Message& message, const FIX::SessionID& sessionID);
     void fromAdmin(const FIX::Message& message, const FIX::SessionID& sessionID)
-        throw (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon);
-    void toApp(FIX::Message& message, const FIX::SessionID& sessionID) throw (FIX::DoNotSend);
+        EXCEPT (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon);
+    void toApp(FIX::Message& message, const FIX::SessionID& sessionID) EXCEPT (FIX::DoNotSend);
     void fromApp(const FIX::Message& message, const FIX::SessionID& sessionID)
-        throw (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType);
+        EXCEPT (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType);
 };
 
 static void FillFromIterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::Fields::const_iterator end, K* keys, K* values)
@@ -122,17 +122,17 @@ void FixEngineApplication::toAdmin(FIX::Message& message, const FIX::SessionID& 
 
 }
 
-void FixEngineApplication::toApp(FIX::Message& message, const FIX::SessionID& sessionID) throw (FIX::DoNotSend)
+void FixEngineApplication::toApp(FIX::Message& message, const FIX::SessionID& sessionID) EXCEPT (FIX::DoNotSend)
 {
 
 }
 
-void FixEngineApplication::fromAdmin(const FIX::Message& message, const FIX::SessionID& sessionID) throw (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon)
+void FixEngineApplication::fromAdmin(const FIX::Message& message, const FIX::SessionID& sessionID) EXCEPT (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon)
 {
     WriteToSocket(ConvertToDictionary(message));
 }
 
-void FixEngineApplication::fromApp(const FIX::Message& message, const FIX::SessionID& sessionID) throw (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType)
+void FixEngineApplication::fromApp(const FIX::Message& message, const FIX::SessionID& sessionID) EXCEPT (FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType)
 {
     WriteToSocket(ConvertToDictionary(message));
 }
@@ -298,7 +298,16 @@ K Version(K x){
 
 extern "C"
 K LoadLibrary(K x)
-{
+{  
+
+    char *TYPEDEFFILE = (char*) "./spec/FIX42.xml";	
+    
+    if( 10==x->t)
+    {
+       TYPEDEFFILE=(char*)kC(x)	;
+       TYPEDEFFILE[x->n]='\0';
+    }
+    
     printf("████████████████████████████████████████████████████\n");
     printf(" release » %-5s                                     \n", BUILD_PROJECT_VERSION);
     printf(" quickfix » %-5s                                    \n", BUILD_QUICKFIX_VERSION);
@@ -309,6 +318,7 @@ K LoadLibrary(K x)
     printf(" build datetime » %-5s                              \n", BUILD_DATE);
     printf(" kdb compatibility » %s.x                           \n", BUILD_KX_VER);
     printf(" compiler flags » %-5s                              \n", BUILD_COMPILER_FLAGS);
+    printf(" typemap default file » -%5s                        \n", TYPEDEFFILE);
     printf("████████████████████████████████████████████████████\n");
 
     K keys = ktn(KS, 6);
@@ -329,15 +339,19 @@ K LoadLibrary(K x)
     kK(values)[4] = dl((void *) Create, 2);
     kK(values)[5] = dl((void *) Version, 1);
 
-    CreateTypeMap();
+    try{CreateTypeMap(TYPEDEFFILE);}
+     catch (...)
+    {
+    return krr((S) "typemapfile");
+    };
 
     return xD(keys, values);
 }
 
-void CreateTypeMap(void)
+void CreateTypeMap(char * TYPEFILE )
 {  
     pugi::xml_document doc;
-    if(!doc.load_file("./spec/FIX42.xml")) throw std::runtime_error("XML could not be loaded");
+    if(!doc.load_file(TYPEFILE)) throw std::runtime_error("XML could not be loaded");
     pugi::xml_node fields = doc.child("fix").child("fields");
     
     for(pugi::xml_node field = fields.child("field"); field; field = field.next_sibling("field"))
