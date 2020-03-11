@@ -1,0 +1,5 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,0,0,q,,1,,Unit tests for FIX.4.2 spec
+before,0,0,q,h:hopen `::5500,1,,
+run,0,0,q,.fix.send_IOI[`AQUAQ;`BROKER],100,,comment
+run,0,0,q,neg[h]"0N!count store",1,
