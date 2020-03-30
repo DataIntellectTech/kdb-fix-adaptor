@@ -37,9 +37,14 @@ std::string typedtostring(K x);
 void CreateTypeMap(char*);
 K convertmsgtype(std::string field, std::string type);
 std::unordered_map<int,std::string> typemap;
-
+std::unordered_map<int,std::string> sessionmap;
 
 int sockets[2];
+int created=0;
+
+FIX::ThreadedSocketConnection *allsessions=nullptr;
+FIX::ThreadedSocketInitiator *initiators=nullptr;
+FIX::ThreadedSocketAcceptor *acceptors=nullptr;
 
 class FixEngineApplication : public FIX::Application
 {
@@ -205,7 +210,7 @@ K RecieveData(I x)
 }
 
 template<typename T>
-K CreateThreadedSocket(K x) {
+K CreateThreadedSocket(K x,T* &y) {
     if (x->t != -11) {
         return krr((S) "type");
     }
@@ -220,26 +225,88 @@ K CreateThreadedSocket(K x) {
     auto store = new FIX::FileStoreFactory(*settings);
     auto log = new FIX::FileLogFactory(*settings);
     
-    dumb_socketpair(sockets, 0);
-    sd1(sockets[1], RecieveData);
-
     T *socket = nullptr;
     socket = new T(*application, *store, *settings, *log);
+    y=&(*socket);
     socket->start();
 
     return (K) 0;
 }
 
-extern "C"
-K CreateInitiator(K x) { return CreateThreadedSocket<FIX::ThreadedSocketInitiator>(x); }
 
-extern "C"
-K CreateAcceptor(K x) { return CreateThreadedSocket<FIX::ThreadedSocketAcceptor>(x); }
+K GetSessionDetails(K x) {
+   int cnt=0;
+   K names=ktn(KS,0);
+   K ptrs=ktn(KJ,0);
+   K acceptor=ktn(KI,0);
+   K isloggedon=ktn(KI,0);
+   K isenabled=ktn(KI,0);
+   K nextsenderseqnum=ktn(KI,0);
+   K nexttargetseqnum=ktn(KI,0);
+   K keys=ktn(KS,0);
+    js(&keys,ss((S)"name"));
+    js(&keys,ss((S)"ptr"));
+    js(&keys,ss((S)"acceptor"));
+    js(&keys,ss((S)"loggedon"));
+    js(&keys,ss((S)"enabled"));
+    js(&keys,ss((S)"nextsenderseqnum"));
+    js(&keys,ss((S)"nexttargetseqnum"));
+    if((nullptr!=initiators)) {
+        std::set < FIX::SessionID >  sessions = initiators->getSessions();
+        std::set < FIX::SessionID >  ::iterator i;
+        for (i = sessions.begin(); i != sessions.end(); ++i) {
+            FIX::Session *yy = initiators->getSession(*i);
+            cnt = cnt + 1;
+            std::string p = yy->getSessionID().toString();
+            int isacceptor = 0;
+            int loggedon = (int) (yy->isLoggedOn());
+            int enabled = (int) (yy->isEnabled());
+            int nexttarget = (int) (yy->getExpectedSenderNum());
+            int nextsender = (int) (yy->getExpectedSenderNum());
+            long ptr = (long) yy;
+            js(&names, ss((S) (p.c_str())));
+            ja(&acceptor, &isacceptor);
+            ja(&isloggedon, &loggedon);
+            ja(&isenabled, &enabled);
+            ja(&nexttargetseqnum, &nextsender);
+            ja(&ptrs, &ptr);
+            sessionmap.insert({ptr,yy->getSessionID().toString()});
+        }
+    }
+    if ((nullptr!=acceptors))
+        {  std::set < FIX::SessionID > asessions = acceptors->getSessions();
+            std::set < FIX::SessionID >  ::iterator j;
+            for (j = asessions.begin(); j != asessions.end(); ++j) {
+                FIX::Session *ayy = acceptors->getSession(*j);
+                cnt = cnt + 1;
+                std::string p = ayy->getSessionID().toString();
+                int isacceptor = 1;
+                int loggedon = (int) (ayy->isLoggedOn());
+                int enabled = (int) (ayy->isEnabled());
+                int nexttarget = (int) (ayy->getExpectedSenderNum());
+                int nextsender = (int) (ayy->getExpectedSenderNum());
+                long ptr = (long) ayy;
+                js(&names, ss((S) (p.c_str())));
+                ja(&acceptor, &isacceptor);
+                ja(&isloggedon, &loggedon);
+                ja(&isenabled, &enabled);
+                ja(&nextsenderseqnum, &nexttarget);
+                ja(&nexttargetseqnum, &nextsender);
+                ja(&ptrs, &ptr);
+                sessionmap.insert({ptr,ayy->getSessionID().toString()});
+            }
+        }
+   K vals=knk(7,names,ptrs,acceptor,isloggedon,isenabled,nextsenderseqnum,nexttargetseqnum);
+
+
+     return r1(xT(xD(keys,vals))); 
+}
 
 
 extern "C"
 K Create(K x, K y) {
-
+   K ret;
+   int i=0;
     if(-11 != x->t){
         return krr((S) "type");
     }
@@ -253,26 +320,34 @@ K Create(K x, K y) {
     else{
         std::cout << "Defaulting to sample.ini config" << std::endl;
     }
-       
-    if(strcmp("initiator",x->s) == 0){
-        std::cout << "Creating Initiator" << std::endl;
-	K ret = CreateThreadedSocket<FIX::ThreadedSocketInitiator>(z);
-	r0(z);
-	return ret;
-    }
-    else if(strcmp("acceptor",x->s) == 0){
-        std::cout << "Creating Acceptor" << std::endl;
-	K ret = CreateThreadedSocket<FIX::ThreadedSocketAcceptor>(z);
-	r0(z);
-	return ret;
-    }
-    else{
-        return krr((S) "type");
+     
+    if(created>0)
+    {
+        return krr((S)"created");
     }
 
+    dumb_socketpair(sockets, 0);
+    sd1(sockets[1], RecieveData);
+  try{
+     ret = CreateThreadedSocket<FIX::ThreadedSocketInitiator>(z,initiators);
+  }
+  catch(const std::exception& e)
+  {      i=i+1;
+	  std::cout << e.what() << std::endl;
+  }
+  
+   try{
+     ret = CreateThreadedSocket<FIX::ThreadedSocketAcceptor>(z,acceptors);
+   } catch(const std::exception& e)
+   {
+	i=i+1;   
+    std::cout << e.what() << std::endl;
+   }
     r0(z);
 
-    return (K) 0;
+    created=1;
+
+    return (K) ki(i);
 }
 
 extern "C"
@@ -321,24 +396,20 @@ K LoadLibrary(K x)
     printf(" typemap default file » -%5s                        \n", TYPEDEFFILE);
     printf("████████████████████████████████████████████████████\n");
 
-    K keys = ktn(KS, 6);
-    K values = ktn(0, 6);
+    K keys = ktn(KS, 5);
+    K values = ktn(0, 5);
 
-    kS(keys)[0] = ss((S) "initiator");
-    kS(keys)[1] = ss((S) "acceptor");
-    kS(keys)[2] = ss((S) "send");
-    kS(keys)[3] = ss((S) "onrecv");
-    kS(keys)[4] = ss((S) "create");
-    kS(keys)[5] = ss((S) "version");
+    kS(keys)[0] = ss((S) "send");
+    kS(keys)[1] = ss((S) "onrecv");
+    kS(keys)[2] = ss((S) "create");
+    kS(keys)[3] = ss((S) "version");
+    kS(keys)[4] = ss((S) "sessiondetails");
 
-
-    kK(values)[0] = dl((void *) CreateInitiator, 1);
-    kK(values)[1] = dl((void *) CreateAcceptor, 1);
-    kK(values)[2] = dl((void *) SendMessageDict, 1);
-    kK(values)[3] = dl((void *) OnRecv, 1);
-    kK(values)[4] = dl((void *) Create, 2);
-    kK(values)[5] = dl((void *) Version, 1);
-
+    kK(values)[0] = dl((void *) SendMessageDict, 1);
+    kK(values)[1] = dl((void *) OnRecv, 1);
+    kK(values)[2] = dl((void *) Create, 2);
+    kK(values)[3] = dl((void *) Version, 1);
+    kK(values)[4] = dl((void *) GetSessionDetails, 1);
     try{CreateTypeMap(TYPEDEFFILE);}
      catch (...)
     {
@@ -564,6 +635,9 @@ std::string typedtostring(K x){
     }
     else if(-14==x->t){
 	x = k(0, (S) "{ssr[string x;\".\";\"\"]}", x, (K)0);
+    }
+    else if(-13==x->t){
+	    x = k(0, (S) "{ssr[string x;\".\";\"\"]}", x, (K)0);
     }
 
     std::string rep("");
