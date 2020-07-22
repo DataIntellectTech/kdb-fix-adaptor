@@ -39,7 +39,7 @@ This project provides a simple shell script that will handle the build process f
 $ git clone https://github.com/AquaQAnalytics/kdb-fix-adaptor
 ```
 
-Next, open kdb-fix-adapter/src/main.cxx and change all of the 'throw' keywords on lines 52, 53, 55, 125, 130 and 135 to 'EXCEPT'. Then run the package.sh script from the kdb-fix-adapter directory:
+Next, open kdb-fix-adapter/src/main.cxx and change all of the 'throw' keywords on lines 52, 53, 55, 125, 130 and 135 to 'EXCEPT'. Then run the shell script from the kdb-fix-adapter directory:
 
 ```sh
 $ ./package.sh
