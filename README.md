@@ -33,15 +33,11 @@ $ sudo make install
 
 Install FIX Library
 
-This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually. Whilst inside the quickfix repo, clone the kdb-fix-adapter repo:
+This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually. Whilst inside the quickfix repo, run the following.
 
 ```sh
 $ git clone https://github.com/AquaQAnalytics/kdb-fix-adaptor
-```
-
-Next, open kdb-fix-adapter/src/main.cxx and change all of the 'throw' keywords on lines 52, 53, 55, 125, 130 and 135 to 'EXCEPT'. Then run the shell script from the kdb-fix-adapter directory:
-
-```sh
+$ cd kdb-fix-adaptor
 $ ./package.sh
 ```
 
