@@ -41,7 +41,7 @@ $ cd kdb-fix-adaptor
 $ ./package.sh
 ```
 
-A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files. Use tar -xvf to unzip this file.
+A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files. Unzip this file.
 
 
 **Note on dynamic exceptions:
