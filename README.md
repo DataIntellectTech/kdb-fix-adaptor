@@ -44,8 +44,9 @@ $ ./package.sh
 A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files. Use tar -xvf to unzip this file.
 
 
-*Note on suppression of depreciation errors
-In kdb-fix-adapter/src/main.cxx, the dynamic exceptions on lines 54, 55, 57, 127, 132 and 137 have been left in despite being depreciated in the current C++ 11 standard. This is because the parent functions in quickfix which define the functions contain the exceptions. Therefore, instead of altering a 3rd party library, the depreciation errors that these produce have been suppressed by lines 34, 35 and 142 in order to allow the script to run. The dynamic exceptions and suppressing lines may be removed once quickfix is updated.
+*Note on dynamic exceptions
+
+In kdb-fix-adapter/src/main.cxx, the dynamic exceptions on lines 54, 55, 57, 127, 132 and 137 have been left in despite being depreciated in the current C++ 11 standard. This is because the parent functions in quickfix, which define the functions, contain exceptions. Therefore, instead of altering a 3rd party library, the depreciation errors that are produced have been suppressed by lines 34, 35 and 142 in order to allow the script to run. The dynamic exceptions and suppressing lines may be removed once quickfix is updated.
 
 ### Building for 32 bit
 
