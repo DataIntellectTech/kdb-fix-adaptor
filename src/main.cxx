@@ -31,6 +31,8 @@
 #include <iomanip>
 #include <algorithm>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated"
 
 std::string typeconvert(std::string s);
 std::string typedtostring(K x);
@@ -136,6 +138,8 @@ void FixEngineApplication::fromApp(const FIX::Message& message, const FIX::Sessi
 {
     WriteToSocket(ConvertToDictionary(message));
 }
+
+#pragma GCC diagnostic pop
 
 extern "C"
 K SendMessageDict(K x)

@@ -33,7 +33,7 @@ $ sudo make install
 
 Install FIX Library
 
-This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually.
+This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually. Whilst inside the quickfix repo, run the following.
 
 ```sh
 $ git clone https://github.com/AquaQAnalytics/kdb-fix-adaptor
@@ -41,8 +41,12 @@ $ cd kdb-fix-adaptor
 $ ./package.sh
 ```
 
-A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files.
+A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files. Unzip this file.
 
+
+**Note on dynamic exceptions:
+
+In kdb-fix-adapter/src/main.cxx, the dynamic exceptions on lines 54, 55, 57, 127, 132 and 137 have been left in despite being depreciated in the current C++ 11 standard. This is because the parent functions in quickfix, which define the functions, contain exceptions. Therefore, instead of altering a 3rd party library, the depreciation errors that are produced have been suppressed by lines 34, 35 and 142 in order to allow the script to run. The dynamic exceptions and suppressing lines may be removed once quickfix is updated.
 
 ### Building for 32 bit
 
