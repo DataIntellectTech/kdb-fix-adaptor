@@ -1,11 +1,4 @@
-#include <iostream>
-#include <unordered_map>
-#include <string>
-#include <vector>
-#include <cstdio>
-#include <ctime>
-#include <chrono>
-#include <algorithm>
+#include <spdlog/spdlog.h>
 
 #include <quickfix/Application.h>
 #include <quickfix/FileStore.h>
@@ -15,11 +8,20 @@
 #include <quickfix/ThreadedSocketInitiator.h>
 #include <quickfix/SessionSettings.h>
 #include <pugixml.hpp>
-#include <kx/k.h>
+
+#include "k.h"
 #include "socketpair.h"
 
 #include <config.h>
 #include <cstring>
+#include <iostream>
+#include <unordered_map>
+#include <string>
+#include <vector>
+#include <cstdio>
+#include <ctime>
+#include <chrono>
+#include <algorithm>
 
 // Each FIX session will resize its buffer for sending and retrieving data
 //
@@ -154,7 +156,7 @@ int fix_field_to_time(const std::string &time) {
     return difference;
 }
 
-K convertmsgtype(std::string field, const std::string &type) {
+K convertmsgtype(const std::string &field, const std::string &type) {
     if ("FLOAT" == type) {
         return kf(std::stof(field));
     } else if ("STRING" == type) {
@@ -209,17 +211,37 @@ static K convert_to_dictionary(const FIX::Message &message) {
     return xD(keys, values);
 }
 
-static void write_to_socket(K x) {
-    static char buffer[8192];
+static void send_data(K x) {
+    // serialize the dictionary that is being sent...
+    K serialized = ee(b9(-1, x));
 
-    K bytes = b9(-1, x);
+    // release the original object...
     r0(x);
 
-    memcpy(&buffer, (char *) &bytes->n, sizeof(J));
-    memcpy(&buffer[sizeof(J)], kG(bytes), (size_t) bytes->n);
+    // check that there were no errors with serializing...
+    if (serialized->t == -128) {
+        spdlog::error("serializing fix message: {}", (serialized->s ? serialized->s : ""));
+        r0(serialized);
+        return;
+    }
 
-    send(socket_pair[0], buffer, (int) sizeof(J) + bytes->n, 0);
-    r0(bytes);
+    size_t message_size = sizeof(serialized->n) + serialized->n;
+
+    if (message_size > MAX_BUFFER_SIZE_BYTES) {
+        spdlog::error("message size too large to write to internal buffer. (size: {})", message_size);
+        r0(serialized);
+        return;
+    }
+
+    // write the size of the serialized K object followed by the K object serialized...
+    send_buffer.resize(message_size);
+    std::memcpy(&send_buffer[0], &serialized->n, sizeof(serialized->n));
+    std::memcpy(&send_buffer[sizeof(serialized->n)], kG(serialized), serialized->n);
+
+    send(socket_pair[0], &send_buffer[0], message_size, 0);
+
+    // release the serialized object...
+    r0(serialized);
 }
 
 void FixEngineApplication::onCreate(const FIX::SessionID &sessionID) {}
@@ -234,12 +256,12 @@ void FixEngineApplication::toApp(FIX::Message &message, const FIX::SessionID &se
 
 void FixEngineApplication::fromAdmin(const FIX::Message &message,
                                      const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon) {
-    write_to_socket(convert_to_dictionary(message));
+    send_data(convert_to_dictionary(message));
 }
 
 void FixEngineApplication::fromApp(const FIX::Message &message,
                                    const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType) {
-    write_to_socket(convert_to_dictionary(message));
+    send_data(convert_to_dictionary(message));
 }
 
 extern "C"
@@ -280,7 +302,7 @@ K send_message_dict(K x) {
     return (K) nullptr;
 }
 
-static inline void read_bytes(ssize_t expected_bytes, void *buffer) {
+static inline void read_bytes(ssize_t expected_bytes, uint8_t *buffer) {
     ssize_t bytes_read = 0;
     do { bytes_read += recv(socket_pair[1], &buffer[bytes_read], (int) (expected_bytes - bytes_read), 0); } while (bytes_read < expected_bytes);
 }
@@ -297,22 +319,27 @@ K receive_data(I x) {
     read_from_socket(&size, sizeof(size));
 
     if (size > MAX_BUFFER_SIZE_BYTES) {
-        std::cerr << "error: message size too large to write to internal buffer. (size: " << size << ")" << std::endl;
+        spdlog::error("message size too large for write to internal buffer. (size: {})", size);
+        return (K) nullptr;
     }
 
     K bytes = ktn(KG, size);
     read_from_socket(kG(bytes), size);
 
-    K deserialized = d9(bytes);
+    K deserialized = ee(d9(bytes));
     r0(bytes);
 
-    if (deserialized == nullptr) {
-        std::cout << "error deserializing message" << std::endl;
+    if (deserialized->t == -128) {
+        spdlog::error("deserializing fix message: {}", (deserialized->s ? deserialized->s : ""));
+        r0(deserialized);
+    } else {
+        K result = ee(k(0, (S) ".fix.onrecv", deserialized, (K) nullptr));
+
+        if (result->t == -128) {
+            spdlog::error("deserializing fix message: {}", (result->s ? result->s : ""));
+            r0(result);
+        }
     }
-
-    K r = k(0, (S) ".fix.onrecv", deserialized, (K) nullptr);
-
-    if (r != nullptr) { r0(r); }
 
     return (K) nullptr;
 }

@@ -11,12 +11,11 @@ set(BINARY_NAME           "${PROGRAM_NAME}.${PROGRAM_VER}")
 
 set(QUICKFIX_GITHUB_TAG   "v1.15.1")
 set(PUGIXML_GITHUB_TAB    "v1.12.1")
-
-option(BUILD_DEBUG        "build debug versions of the binaries with symbols"         OFF)
+set(SPDLOG_GITHUB_TAB     "v1.9.2")
 
 project(${BINARY_NAME} CXX)
 
-add_definitions(-DKXVER=3 -Wno-deprecated -Wno-unused -Denable-static)
+add_definitions(-DKXVER=3 -Wno-deprecated -Wno-unused)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,7 +45,7 @@ ExternalProject_Add(PugiXML
 include_directories(
 		"${CMAKE_SOURCE_DIR}/include"
 		"${CMAKE_BINARY_DIR}/include"
-		"${CMAKE_SOURCE_DIR}/third_party/kx/include")
+		"${CMAKE_SOURCE_DIR}/third_party/kx/c/c")
 
 link_directories(
 		"${CMAKE_BINARY_DIR}/lib")
