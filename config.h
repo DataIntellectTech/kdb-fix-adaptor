@@ -1,6 +1,6 @@
 #define BUILD_PROJECT_VERSION       "@PROGRAM_VER@"
-#define BUILD_QUICKFIX_VERSION      "@QUICKFIX_VER@"
-#define BUILD_USE_BOOST             "@BUILD_BOOST@"
+#define BUILD_QUICKFIX_VERSION      "@QUICKFIX_GITHUB_TAG@"
+#define BUILD_PUGIXML_VERSION       "@PUGIXML_GITHUB_TAG@"
 #define BUILD_x86                   "@BUILD_x86@"
 #define BUILD_DEBUG                 "@BUILD_DEBUG@"
 #define BUILD_SHARED_LIBRARY        "@BUILD_LIBRARY@"

@@ -12,12 +12,11 @@ set(BINARY_NAME           "${PROGRAM_NAME}.${PROGRAM_VER}")
 set(QUICKFIX_GITHUB_TAG   "v1.15.1")
 set(PUGIXML_GITHUB_TAB    "v1.12.1")
 
-option(BUILD_BOOST        "build with the boost libraries available on the path"      ON)
 option(BUILD_DEBUG        "build debug versions of the binaries with symbols"         OFF)
 
 project(${BINARY_NAME} CXX)
 
-add_definitions(-DKXVER=3 -DBOOST_LOG_DYN_LINK -Wno-deprecated -Denable-static)
+add_definitions(-DKXVER=3 -Wno-deprecated -Denable-static)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
