@@ -21,9 +21,21 @@
 #include <config.h>
 #include <cstring>
 
+// Each FIX session will resize its buffer for sending and retrieving data
+//
+constexpr uint64_t MAX_BUFFER_SIZE_MB = 64;
+constexpr uint64_t MAX_BUFFER_SIZE_BYTES = MAX_BUFFER_SIZE_MB * 1024 * 1024;
+
 std::unordered_map<int, std::string> typemap;
 
-int sockets[2];
+std::vector<uint8_t> send_buffer;
+std::vector<uint8_t> recv_buffer;
+
+// socket pair for communication between fix engine instance and the main q thread.
+//
+// socket_pair[0] is for writing to the main thread.
+// socket_pair[1] is for reading from the main thread.
+int socket_pair[2];
 
 class FixEngineApplication : public FIX::Application {
 public:
@@ -111,15 +123,7 @@ std::string kdb_type_to_fix_str(K x) {
 K strtotemporal(const std::string &datestring) {
     int year, month, day, hour, minute, second, ms;
 
-    sscanf(datestring.c_str(),
-           "%4d%2d%2d-%2d:%2d:%2d.%3d",
-           &year,
-           &month,
-           &day,
-           &hour,
-           &minute,
-           &second,
-           &ms);
+    std::sscanf(datestring.c_str(), "%4d%2d%2d-%2d:%2d:%2d.%3d", &year, &month, &day, &hour, &minute, &second, &ms);
 
     auto tp_micro = Tm(year, month, day, hour, minute, second).to_time_point();
     K tp = pu(std::chrono::high_resolution_clock::to_time_t(tp_micro)); // ms from Unix epoch
@@ -214,7 +218,7 @@ static void write_to_socket(K x) {
     memcpy(&buffer, (char *) &bytes->n, sizeof(J));
     memcpy(&buffer[sizeof(J)], kG(bytes), (size_t) bytes->n);
 
-    send(sockets[0], buffer, (int) sizeof(J) + bytes->n, 0);
+    send(socket_pair[0], buffer, (int) sizeof(J) + bytes->n, 0);
     r0(bytes);
 }
 
@@ -276,26 +280,37 @@ K send_message_dict(K x) {
     return (K) nullptr;
 }
 
-static inline void read_bytes(ssize_t expected_bytes, char (*buf)[4096]) {
+static inline void read_bytes(ssize_t expected_bytes, void *buffer) {
     ssize_t bytes_read = 0;
-    do { bytes_read += recv(sockets[1], &buf[bytes_read], (int) (expected_bytes - bytes_read), 0); }
-    while (bytes_read < expected_bytes);
+    do { bytes_read += recv(socket_pair[1], &buffer[bytes_read], (int) (expected_bytes - bytes_read), 0); } while (bytes_read < expected_bytes);
+}
+
+static inline void read_from_socket(void *dest, ssize_t expected_bytes) {
+    recv_buffer.resize(expected_bytes);
+    read_bytes(expected_bytes, &recv_buffer[0]);
+    std::memcpy(dest, &recv_buffer[0], expected_bytes);
 }
 
 extern "C"
 K receive_data(I x) {
-    static char buf[4096];
     J size = 0;
+    read_from_socket(&size, sizeof(size));
 
-    read_bytes(sizeof(J), &buf);
-    memcpy(&size, buf, sizeof(J));
+    if (size > MAX_BUFFER_SIZE_BYTES) {
+        std::cerr << "error: message size too large to write to internal buffer. (size: " << size << ")" << std::endl;
+    }
 
     K bytes = ktn(KG, size);
+    read_from_socket(kG(bytes), size);
 
-    read_bytes(size, &buf);
-    memcpy(kG(bytes), &buf, (size_t) size);
-    K r = k(0, (char *) ".fix.onrecv", d9(bytes), (K) nullptr);
+    K deserialized = d9(bytes);
     r0(bytes);
+
+    if (deserialized == nullptr) {
+        std::cout << "error deserializing message" << std::endl;
+    }
+
+    K r = k(0, (S) ".fix.onrecv", deserialized, (K) nullptr);
 
     if (r != nullptr) { r0(r); }
 
@@ -316,8 +331,8 @@ K create_threaded_socket(K x) {
     auto store = new FIX::FileStoreFactory(*settings);
     auto log = new FIX::FileLogFactory(*settings);
 
-    dumb_socketpair(sockets, 0);
-    sd1(sockets[1], receive_data);
+    dumb_socketpair(socket_pair, 0);
+    sd1(socket_pair[1], receive_data);
 
     T *socket = new T(*application, *store, *settings, *log);
     socket->start();

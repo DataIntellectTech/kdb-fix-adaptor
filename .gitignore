@@ -1,4 +1,6 @@
 .tmp/
-third_party/quickfix/
-run.sh
 build/
+cmake*/
+
+.idea/
+.vscode/
