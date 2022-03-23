@@ -16,7 +16,7 @@ option(BUILD_DEBUG        "build debug versions of the binaries with symbols"   
 
 project(${BINARY_NAME} CXX)
 
-add_definitions(-DKXVER=3 -Wno-deprecated -Denable-static)
+add_definitions(-DKXVER=3 -Wno-deprecated -Wno-unused -Denable-static)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

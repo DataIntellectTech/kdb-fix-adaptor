@@ -45,11 +45,9 @@ public:
 };
 
 struct Tm : std::tm {
-    int tm_usecs;
-
     Tm(const int year, const int month, const int mday, const int hour,
-       const int min, const int sec, const int usecs, const int isDST = -1)
-            : tm(), tm_usecs{usecs} {
+       const int min, const int sec, const int isDST = -1)
+            : tm() {
         tm_year = year - 1900;
         tm_mon = month - 1;
         tm_mday = mday;
@@ -67,11 +65,13 @@ struct Tm : std::tm {
 };
 
 K pu(I x) {
-    return k(0, (S) "`timestamp$", kz(x / 8.64e4 - 10957), (K) 0);
-};
+    return k(0, (S) "`timestamp$", kz(x / 8.64e4 - 10957), (K) nullptr);
+}
 
-std::string typedtostring(K x) {
-
+//
+// Converts a K object into
+//
+std::string kdb_type_to_fix_str(K x) {
     if (-1 == x->t) {
         if (1 == x->g) {
             x = kp(const_cast<char *>("Y"));
@@ -96,7 +96,7 @@ std::string typedtostring(K x) {
         buffer[20] = timestr[11];
         x = kp(buffer);
     } else if (-14 == x->t) {
-        x = k(0, (S) R"({ssr[string x;".";""]})", x, (K) 0);
+        x = k(0, (S) R"({ssr[string x;".";""]})", x, (K) nullptr);
     }
 
     std::string rep;
@@ -108,9 +108,7 @@ std::string typedtostring(K x) {
     return rep;
 }
 
-
 K strtotemporal(const std::string &datestring) {
-
     int year, month, day, hour, minute, second, ms;
 
     sscanf(datestring.c_str(),
@@ -123,36 +121,27 @@ K strtotemporal(const std::string &datestring) {
            &second,
            &ms);
 
-    auto tp_micro = Tm(year, month, day, hour, minute, second, ms).to_time_point();
+    auto tp_micro = Tm(year, month, day, hour, minute, second).to_time_point();
     K tp = pu(std::chrono::high_resolution_clock::to_time_t(tp_micro)); // ms from Unix epoch
     auto time = tp->j + ms * 1e6;
 
     return kj(time);
 }
 
-int strtodate(const std::string &date) {
+int fix_field_to_date(const std::string &date) {
     int year, month, day;
-    sscanf(date.c_str(),
-           "%4d%2d%2d",
-           &year,
-           &month,
-           &day);
+    std::sscanf(date.c_str(), "%4d%2d%2d", &year, &month,
+                &day); // todo :: handle read errors with sscanf - need to check number if variable read matches
     struct std::tm a = {0, 0, 0, day, month - 1, year - 1900};
     struct std::tm b = {0, 0, 0, 1, 0, 100};
     std::time_t x = std::mktime(&a);
     std::time_t y = std::mktime(&b);
-    int difference = std::difftime(x, y) / (60 * 60 * 24);
-    return difference;
+    return std::difftime(x, y) / (60 * 60 * 24);
 }
 
-int strtotime(const std::string &time) {
-
+int fix_field_to_time(const std::string &time) {
     int hour, minute, second;
-    sscanf(time.c_str(),
-           "%2d:%2d:%2d",
-           &hour,
-           &minute,
-           &second);
+    sscanf(time.c_str(), "%2d:%2d:%2d", &hour, &minute, &second);
     struct std::tm a = {second, minute, hour, 1, 0, 0};
     struct std::tm b = {0, 0, 0, 1, 0, 0};
     std::time_t x = std::mktime(&a);
@@ -162,7 +151,6 @@ int strtotime(const std::string &time) {
 }
 
 K convertmsgtype(std::string field, const std::string &type) {
-
     if ("FLOAT" == type) {
         return kf(std::stof(field));
     } else if ("STRING" == type) {
@@ -170,28 +158,19 @@ K convertmsgtype(std::string field, const std::string &type) {
     } else if ("INT" == type) {
         return ki(std::stoi(field));
     } else if ("CHAR" == type) {
-        char *c = &field[0u];
-        int d = c[0];
-        return kc(d);
+        return kc(field[0]);
     } else if ("BOOLEAN" == type) {
-        if ("Y" == field) {
-            return kb(1);
-        } else {
-            return kb(0);
-        }
+        return kb("Y" == field);
     } else if ("TIMESTAMP" == type) {
         auto ts = strtotemporal(field);
         return ktj(-KP, ts->j);
     } else if ("DATE" == type) {
-        auto date = strtodate(field);
-        return kd(date);
+        return kd(fix_field_to_date(field));
     } else if ("TIME" == type) {
-        auto time = strtotime(field);
-        return kt(time);
+        return kt(fix_field_to_time(field));
     } else {
         return kp(const_cast<char *>(field.c_str()));
     }
-
 }
 
 static void
@@ -208,25 +187,25 @@ fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::
             jk(values, ks(const_cast<char *>(str)));
         } else {
             jk(values, convertmsgtype(str, found->second));
-        };
+        }
     }
 }
 
-static K ConvertToDictionary(const FIX::Message &message) {
+static K convert_to_dictionary(const FIX::Message &message) {
     K keys = ktn(KJ, 0);
     K values = ktn(0, 0);
 
     auto header = message.getHeader();
     auto trailer = message.getTrailer();
 
-    fill_from_iterators(header.begin(), header.end(), &keys, &values);
-    fill_from_iterators(message.begin(), message.end(), &keys, &values);
-    fill_from_iterators(trailer.begin(), trailer.end(), &keys, &values);
+    fill_from_iterators(std::begin(header), std::end(header), &keys, &values);
+    fill_from_iterators(std::begin(message), std::end(message), &keys, &values);
+    fill_from_iterators(std::begin(trailer), std::end(trailer), &keys, &values);
 
     return xD(keys, values);
 }
 
-static void WriteToSocket(K x) {
+static void write_to_socket(K x) {
     static char buffer[8192];
 
     K bytes = b9(-1, x);
@@ -251,12 +230,12 @@ void FixEngineApplication::toApp(FIX::Message &message, const FIX::SessionID &se
 
 void FixEngineApplication::fromAdmin(const FIX::Message &message,
                                      const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon) {
-    WriteToSocket(ConvertToDictionary(message));
+    write_to_socket(convert_to_dictionary(message));
 }
 
 void FixEngineApplication::fromApp(const FIX::Message &message,
                                    const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType) {
-    WriteToSocket(ConvertToDictionary(message));
+    write_to_socket(convert_to_dictionary(message));
 }
 
 extern "C"
@@ -279,7 +258,7 @@ K send_message_dict(K x) {
     for (int i = 0; i < keys->n; i++) {
         int tag = kJ(keys)[i];
 
-        auto rep = typedtostring(kK(values)[i]);
+        auto rep = kdb_type_to_fix_str(kK(values)[i]);
 
         if (tag == 35 || tag == 8 || tag == 49 || tag == 56) {
             header.setField(tag, rep);
@@ -315,24 +294,22 @@ K receive_data(I x) {
 
     read_bytes(size, &buf);
     memcpy(kG(bytes), &buf, (size_t) size);
-    K r = k(0, (char *) ".fix.onrecv", d9(bytes), (K) 0);
+    K r = k(0, (char *) ".fix.onrecv", d9(bytes), (K) nullptr);
     r0(bytes);
 
-    if (r != 0) { r0(r); }
+    if (r != nullptr) { r0(r); }
 
-    return (K) 0;
+    return (K) nullptr;
 }
 
 template<typename T>
-K CreateThreadedSocket(K x) {
+K create_threaded_socket(K x) {
     if (x->t != -11) {
         return krr((S) "type");
     }
 
-    std::string settingsPath = "settings.ini";
-
-    settingsPath = std::string(x->s);
-    settingsPath.erase(std::remove(settingsPath.begin(), settingsPath.end(), ':'), settingsPath.end());
+    std::string settingsPath = std::string(x->s);
+    settingsPath.erase(std::remove(std::begin(settingsPath), std::end(settingsPath), ':'), std::end(settingsPath));
 
     auto settings = new FIX::SessionSettings(settingsPath);
     auto application = new FixEngineApplication;
@@ -345,15 +322,14 @@ K CreateThreadedSocket(K x) {
     T *socket = new T(*application, *store, *settings, *log);
     socket->start();
 
-    return (K) 0;
+    return (K) nullptr;
 }
 
 extern "C"
-K create_initiator(K x) { return CreateThreadedSocket<FIX::ThreadedSocketInitiator>(x); }
+K create_initiator(K x) { return create_threaded_socket<FIX::ThreadedSocketInitiator>(x); }
 
 extern "C"
-K create_acceptor(K x) { return CreateThreadedSocket<FIX::ThreadedSocketAcceptor>(x); }
-
+K create_acceptor(K x) { return create_threaded_socket<FIX::ThreadedSocketAcceptor>(x); }
 
 extern "C"
 K create(K x, K y) {
@@ -371,11 +347,11 @@ K create(K x, K y) {
     }
 
     if (strcmp("initiator", x->s) == 0) {
-        K ret = CreateThreadedSocket<FIX::ThreadedSocketInitiator>(z);
+        K ret = create_threaded_socket<FIX::ThreadedSocketInitiator>(z);
         r0(z);
         return ret;
     } else if (strcmp("acceptor", x->s) == 0) {
-        K ret = CreateThreadedSocket<FIX::ThreadedSocketAcceptor>(z);
+        K ret = create_threaded_socket<FIX::ThreadedSocketAcceptor>(z);
         r0(z);
         return ret;
     } else {
@@ -383,8 +359,9 @@ K create(K x, K y) {
     }
 }
 
-extern "C"
-K on_recv(K x) { return (K) nullptr; }
+// We have an empty implementation of on_recv for the case where the q code doesn't provide
+// one for us.
+extern "C" K on_recv(K x) { return (K) nullptr; }
 
 extern "C"
 K get_version_info(K x) {
@@ -407,53 +384,53 @@ K get_version_info(K x) {
 std::unordered_map<std::string, std::string> &get_conversion_map() {
     // Mapping of FIX types to KDB types used when decoding FIX messages. If a type is not
     // present in this map then it will be converted into a string.
-    static std::unordered_map<std::string, std::string> CONVERSION_MAP = {
-            {"STRING", "STRING"},
+    static std::unordered_map<std::string, std::string> STATIC_CONVERSION_MAP = {
+            {"STRING",              "STRING"},
             {"MULTIPLEVALUESTRING", "STRING"},
-            {"PRICE", "FLOAT"},
-            {"CHAR", "CHAR"},
-            {"INT", "INT"},
-            {"AMT", "FLOAT"},
-            {"CURRENCY", "FLOAT"},
-            {"QTY", "FLOAT"},
-            {"EXCHANGE", "SYM"},
-            {"UTCTIMESTAMP", "TIMESTAMP"},
-            {"BOOLEAN", "BOOLEAN"},
-            {"LOCALMKTDATE", "DATE"},
-            {"DATA", "STRING"},
-            {"LENGTH", "FLOAT"},
-            {"FLOAT", "FLOAT"},
-            {"PRICEOFFSET", "FLOAT"},
-            {"MONTHYEAR", "STRING"},
-            {"DAYOFMONTH", "STRING"},
-            {"UTCDATE", "DATE"},
-            {"UTCTIMEONLY", "TIME"},
-            {"COUNTRY", "STRING"},
-            {"DATE", "STRING"},
-            {"EXCHANGE", "SYM"},
-            {"LANGUAGE", "STRING"},
-            {"MULTIPLECHARVALUE", "STRING"},
+            {"PRICE",               "FLOAT"},
+            {"CHAR",                "CHAR"},
+            {"INT",                 "INT"},
+            {"AMT",                 "FLOAT"},
+            {"CURRENCY",            "FLOAT"},
+            {"QTY",                 "FLOAT"},
+            {"EXCHANGE",            "SYM"},
+            {"UTCTIMESTAMP",        "TIMESTAMP"},
+            {"BOOLEAN",             "BOOLEAN"},
+            {"LOCALMKTDATE",        "DATE"},
+            {"DATA",                "STRING"},
+            {"LENGTH",              "FLOAT"},
+            {"FLOAT",               "FLOAT"},
+            {"PRICEOFFSET",         "FLOAT"},
+            {"MONTHYEAR",           "STRING"},
+            {"DAYOFMONTH",          "STRING"},
+            {"UTCDATE",             "DATE"},
+            {"UTCTIMEONLY",         "TIME"},
+            {"COUNTRY",             "STRING"},
+            {"DATE",                "STRING"},
+            {"EXCHANGE",            "SYM"},
+            {"LANGUAGE",            "STRING"},
+            {"MULTIPLECHARVALUE",   "STRING"},
             {"MULTIPLESTRINGVALUE", "STRING"},
-            {"NUMINGROUP", "INT"},
-            {"PERCENTAGE", "FLOAT"},
-            {"PRICEOFFSET", "FLOAT"},
-            {"SEQNUM", "INT"},
-            {"TIME", "STRING"},
-            {"UTCDATE", "DATE"},
-            {"UTCTIMEONLY", "STRING"},
+            {"NUMINGROUP",          "INT"},
+            {"PERCENTAGE",          "FLOAT"},
+            {"PRICEOFFSET",         "FLOAT"},
+            {"SEQNUM",              "INT"},
+            {"TIME",                "STRING"},
+            {"UTCDATE",             "DATE"},
+            {"UTCTIMEONLY",         "STRING"},
     };
 
     // Initialized only on first call to function due to static storage.
-    return CONVERSION_MAP;
+    return STATIC_CONVERSION_MAP;
 }
 
 std::string fix_type_to_kdb_type(const std::string &s) {
     auto conversion_map = get_conversion_map();
     auto found = conversion_map.find(s);
-    return (found != conversion_map.end()) ? found->second : "STRING";
+    return found != std::end(conversion_map) ? found->second : "STRING";
 }
 
-void create_type_map() {
+void initialize_type_map() {
     pugi::xml_document doc;
     if (!doc.load_file("./spec/FIX42.xml")) throw std::runtime_error("XML could not be loaded");
     pugi::xml_node fields = doc.child("fix").child("fields");
@@ -496,14 +473,8 @@ K LoadLibrary(K x) {
     kK(values)[4] = dl((void *) create, 2);
     kK(values)[5] = dl((void *) get_version_info, 1);
 
-    create_type_map();
+    // todo :: this should be done lazily when a session is created based on the acceptor or initiator config.
+    initialize_type_map();
 
     return xD(keys, values);
 }
-
-
-
-
-
-
-
