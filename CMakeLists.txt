@@ -1,57 +1,89 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.14)
+include(ExternalProject)
 
 ###################################################################################
 # CONFIGURATION
 ###################################################################################
 set(PROGRAM_NAME          "kdbfix")
-set(PROGRAM_VER           "0.5.1")
+set(PROGRAM_VER           "0.5.2")
 set(PROGRAM_MAIN          "src/main.cxx")
-set(QUICKFIX_VER          "1.14.3")
-set(KX_VER                "3")
 set(BINARY_NAME           "${PROGRAM_NAME}.${PROGRAM_VER}")
 
+set(QUICKFIX_GITHUB_TAG   "v1.15.1")
+set(PUGIXML_GITHUB_TAB    "v1.12.1")
+
 option(BUILD_BOOST        "build with the boost libraries available on the path"      ON)
-option(BUILD_x86          "build a 32-bit binary instead of the default 64 bit one"   OFF)
 option(BUILD_DEBUG        "build debug versions of the binaries with symbols"         OFF)
 
-project(${BINARY_NAME} CXX C)
+project(${BINARY_NAME} CXX)
 
-add_library(${BINARY_NAME} SHARED 
-	"${CMAKE_SOURCE_DIR}/${PROGRAM_MAIN}" 
-	"${CMAKE_SOURCE_DIR}/third_party/pugixml-1.7/src/pugixml.cpp")
-target_link_libraries(${BINARY_NAME} "quickfix")
+add_definitions(-DKXVER=3 -DBOOST_LOG_DYN_LINK -Wno-deprecated -Denable-static)
 
-include_directories("${CMAKE_SOURCE_DIR}/include")
-include_directories("${CMAKE_BINARY_DIR}/include")
-include_directories("${CMAKE_SOURCE_DIR}/third_party/kx/include")
-include_directories("${CMAKE_SOURCE_DIR}/third_party/pugixml-1.7/src")
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-if(BUILD_x86)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32")
-endif(BUILD_x86)
+find_package(Threads REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_LOG_DYN_LINK -Wall -Werror -fno-strict-aliasing -std=c++11 -Os -DKXVER=${KX_VER} -fpic")
+ExternalProject_Add(QuickFix
+		GIT_REPOSITORY
+		"https://github.com/quickfix/quickfix.git"
+		GIT_TAG
+		"${QUICKFIX_GITHUB_TAG}"
+		CMAKE_ARGS
+		"-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+		"-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}")
+
+ExternalProject_Add(PugiXML
+		GIT_REPOSITORY
+		"https://github.com/zeux/pugixml.git"
+		GIT_TAG
+		"${PUGIXML_GITHUB_TAG}"
+		CMAKE_ARGS
+		"-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+		"-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}")
+
+include_directories(
+		"${CMAKE_SOURCE_DIR}/include"
+		"${CMAKE_BINARY_DIR}/include"
+		"${CMAKE_SOURCE_DIR}/third_party/kx/include")
+
+link_directories(
+		"${CMAKE_BINARY_DIR}/lib")
+
+add_library(${BINARY_NAME} SHARED
+		"${CMAKE_SOURCE_DIR}/${PROGRAM_MAIN}")
+
+target_link_libraries(${BINARY_NAME} PRIVATE
+		"quickfix"
+		"Threads::Threads")
+
+# We need to build PugiXML and QuickFix before we can build the rest of the project...
+add_dependencies("${PROJECT_NAME}"
+		PugiXML
+		QuickFix)
 
 # Make sure that the build system doesn't add a 'lib' prefix to the shared library
 set_target_properties(${BINARY_NAME} PROPERTIES PREFIX "")
 
 execute_process(COMMAND
-    "git" describe --match=NeVeRmAtCh --always --abbrev=40 --dirty
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    OUTPUT_VARIABLE GIT_SHA1
-    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+		"git" describe --match=NeVeRmAtCh --always --abbrev=40 --dirty
+		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+		OUTPUT_VARIABLE GIT_SHA1
+		ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 execute_process(COMMAND
-    "git" log -1 --format=%ad --date=local
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    OUTPUT_VARIABLE GIT_DATE
-    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+		"git" log -1 --format=%ad --date=local
+		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+		OUTPUT_VARIABLE GIT_DATE
+		ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 execute_process(COMMAND
-    "date"
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    OUTPUT_VARIABLE BUILD_DATE
-    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+		"date"
+		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+		OUTPUT_VARIABLE BUILD_DATE
+		ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 # Generate a configuration file that will contain all of the build variables used by CMake
 configure_file("${CMAKE_SOURCE_DIR}/config.h" "${CMAKE_BINARY_DIR}/include/config.h")
@@ -64,11 +96,11 @@ file(COPY "${CMAKE_SOURCE_DIR}/src/config/log" DESTINATION "${CMAKE_BINARY_DIR}"
 file(COPY "${CMAKE_SOURCE_DIR}/src/config/sessions" DESTINATION "${CMAKE_BINARY_DIR}")
 
 add_custom_target(build_package COMMAND
-    ${CMAKE_COMMAND} -E tar "cfv" "${CMAKE_SOURCE_DIR}/${PROGRAM_NAME}-${PROGRAM_VER}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}.tar.gz"
-    "${CMAKE_BINARY_DIR}/${BINARY_NAME}.so"
-    "${CMAKE_BINARY_DIR}/README.md"
-    "${CMAKE_BINARY_DIR}/LICENSE.md"
-    "${CMAKE_BINARY_DIR}/spec"
-    "${CMAKE_BINARY_DIR}/log"
-    "${CMAKE_BINARY_DIR}/sessions"
-    "${CMAKE_BINARY_DIR}/fix.q")
+		${CMAKE_COMMAND} -E tar "cfv" "${CMAKE_SOURCE_DIR}/${PROGRAM_NAME}-${PROGRAM_VER}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}.tar.gz"
+		"${CMAKE_BINARY_DIR}/${BINARY_NAME}.so"
+		"${CMAKE_BINARY_DIR}/README.md"
+		"${CMAKE_BINARY_DIR}/LICENSE.md"
+		"${CMAKE_BINARY_DIR}/spec"
+		"${CMAKE_BINARY_DIR}/log"
+		"${CMAKE_BINARY_DIR}/sessions"
+		"${CMAKE_BINARY_DIR}/fix.q")
