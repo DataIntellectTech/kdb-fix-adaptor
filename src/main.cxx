@@ -56,26 +56,6 @@ public:
                  const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType) override;
 };
 
-struct Tm : std::tm {
-    Tm(const int year, const int month, const int mday, const int hour,
-       const int min, const int sec, const int isDST = -1)
-            : tm() {
-        tm_year = year - 1900;
-        tm_mon = month - 1;
-        tm_mday = mday;
-        tm_hour = hour;
-        tm_min = min;
-        tm_sec = sec;
-        tm_isdst = isDST;
-    }
-
-    template<typename Clock_t = std::chrono::high_resolution_clock>
-    auto to_time_point() -> typename Clock_t::time_point {
-        auto time_c = mktime(this);
-        return Clock_t::from_time_t(time_c);
-    }
-};
-
 K pu(I x) {
     return k(0, (S) "`timestamp$", kz(x / 8.64e4 - 10957), (K) nullptr);
 }
@@ -84,12 +64,10 @@ K pu(I x) {
 // Converts a K object into its FIX string representation.
 //
 std::string kdb_type_to_fix_str(K x) {
+    std::string result;
+
     if (-1 == x->t) {
-        if (1 == x->g) {
-            x = kp(const_cast<char *>("Y"));
-        } else {
-            x = kp(const_cast<char *>("N"));
-        }
+        1 == x->g ? result.append("Y") : result.append("N");
     } else if (x->t <= -2 && x->t >= -11) {
         x = k(0, (S) "string ", r1(x), (K) nullptr);
     } else if (-12 == x->t) {
@@ -108,53 +86,44 @@ std::string kdb_type_to_fix_str(K x) {
         buffer[20] = timestr[11];
         x = kp(buffer);
     } else if ((-14 == x->t) || (-13 == x->t)) {
-        x = k(0, (S) R"({ssr[string x;".";""]})", x, (K) nullptr);
+        x = k(0, (S) R"({ssr[string x;".";""]})", r1(x), (K) nullptr);
     }
 
-    std::string rep;
-
-    for (int i = 0; i < x->n; i++) {
-        rep += kC(x)[i];
-    }
-
-    return rep;
+    return std::string{reinterpret_cast<S>(kC(x)), static_cast<size_t>(x->n)};
 }
 
-K fix_field_to_temporal(const std::string &field) {
+K parse_fix_to_timestamp(const std::string &field) {
     int year, month, day, hour, minute, second, ms;
-
     std::sscanf(field.c_str(), "%4d%2d%2d-%2d:%2d:%2d.%3d", &year, &month, &day, &hour, &minute, &second, &ms);
 
-    auto tp_micro = Tm(year, month, day, hour, minute, second).to_time_point();
-    K tp = pu(std::chrono::high_resolution_clock::to_time_t(tp_micro)); // ms from Unix epoch
-    auto time = tp->j + ms * 1e6;
+    std::tm tm{};
+    tm.tm_year  = year - 1930;
+    tm.tm_mon   = month - 1;
+    tm.tm_mday  = day;
+    tm.tm_hour  = hour;
+    tm.tm_min   = minute;
+    tm.tm_sec   = second;
+    tm.tm_isdst = -1;
 
-    return ktj(-KP, time);
+    auto time = std::chrono::high_resolution_clock::from_time_t(std::mktime(&tm));
+    auto time_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time).time_since_epoch().count();
+
+    return ktj(-KP, time_ns + (ms * 1000000));
 }
 
-K fix_field_to_date(const std::string &field) {
+K parse_fix_to_date(const std::string &field) {
     int year, month, day;
-    std::sscanf(field.c_str(), "%4d%2d%2d", &year, &month,
-                &day); // todo :: handle read errors with sscanf - need to check number if variable read matches
-    struct std::tm a = {0, 0, 0, day, month - 1, year - 1900};
-    struct std::tm b = {0, 0, 0, 1, 0, 100};
-    std::time_t x = std::mktime(&a);
-    std::time_t y = std::mktime(&b);
-    return kd(std::difftime(x, y) / (60 * 60 * 24));
+    std::sscanf(field.c_str(), "%4d%2d%2d", &year, &month, &day);
+    return kd(ymd(year, month, day));
 }
 
-K fix_field_to_time(const std::string &field) {
+K parse_fix_to_time(const std::string &field) {
     int hour, minute, second;
     std::sscanf(field.c_str(), "%2d:%2d:%2d", &hour, &minute, &second);
-    struct std::tm a = {second, minute, hour, 1, 0, 0};
-    struct std::tm b = {0, 0, 0, 1, 0, 0};
-    std::time_t x = std::mktime(&a);
-    std::time_t y = std::mktime(&b);
-    int difference = std::difftime(x, y) * 1e3;
-    return kt(difference);
+    return kt(((hour * 3600) + (minute * 60) + second) * 1000);
 }
 
-K convert_fix_field_to_kobj(const std::string &field, const std::string &type) {
+K parse_fix_to_kobj(const std::string &field, const std::string &type) {
     if ("FLOAT" == type) {
         return kf(std::stof(field));
     } else if ("STRING" == type) {
@@ -166,11 +135,11 @@ K convert_fix_field_to_kobj(const std::string &field, const std::string &type) {
     } else if ("BOOLEAN" == type) {
         return kb("Y" == field);
     } else if ("TIMESTAMP" == type) {
-        return fix_field_to_temporal(field);
+        return parse_fix_to_timestamp(field);
     } else if ("DATE" == type) {
-        return fix_field_to_date(field);
+        return parse_fix_to_date(field);
     } else if ("TIME" == type) {
-        return fix_field_to_time(field);
+        return parse_fix_to_time(field);
     } else {
         return kp(const_cast<char *>(field.c_str()));
     }
@@ -182,14 +151,13 @@ fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::
     for (auto it = begin; it != end; it++) {
         J tag = (J) it->getTag();
         auto str = it->getString().c_str();
-
         auto found = typemap.find(tag);
         ja(keys, &tag);
 
         if (55 == tag) {
             jk(values, ks(const_cast<char *>(str)));
         } else {
-            jk(values, convert_fix_field_to_kobj(str, found->second));
+            jk(values, parse_fix_to_kobj(str, found->second));
         }
     }
 }
@@ -274,10 +242,8 @@ K send_message_dict(K x) {
     FIX::Header &header = message.getHeader();
 
     for (int i = 0; i < keys->n; i++) {
-        int tag = kJ(keys)[i];
-
         auto rep = kdb_type_to_fix_str(kK(values)[i]);
-
+        int tag = kJ(keys)[i];
         if (tag == 35 || tag == 8 || tag == 49 || tag == 56) {
             header.setField(tag, rep);
         } else {
@@ -328,9 +294,10 @@ K receive_data(I x) {
         K result = ee(k(0, (S) ".fix.onrecv", deserialized, (K) nullptr));
 
         if (unlikely(is_k_error(result))) {
-            spdlog::error("sending fix message via .fix.onrecv: {}", (result->s ? result->s : ""));
-            r0(result);
+            spdlog::error("problem sending fix message via .fix.onrecv: {}", (result->s ? result->s : ""));
         }
+
+        r0(result);
     }
 
     return (K) nullptr;
@@ -483,8 +450,6 @@ K LoadLibrary(K x) {
     spdlog::info(" pugixml » {}", BUILD_PUGIXML_VERSION);
     spdlog::info(" os » {} ", BUILD_OPERATING_SYSTEM);
     spdlog::info(" arch » {}", BUILD_PROCESSOR);
-    spdlog::info(" git commit » {}", BUILD_GIT_SHA1);
-    spdlog::info(" git commit datetime » {}", BUILD_GIT_DATE);
     spdlog::info(" build datetime » {}", BUILD_DATE);
     spdlog::info(" kdb compatibility » {}", BUILD_KX_VER);
     spdlog::info(" compiler flags » {}", BUILD_COMPILER_FLAGS);

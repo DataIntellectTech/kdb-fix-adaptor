@@ -66,7 +66,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE
 		"quickfix"
 		"Threads::Threads")
 
-# We need to build PugiXML and QuickFix before we can build the rest of the project...
+# We need to build SpdLog, PugiXML and QuickFix before we can build the rest of the project...
 add_dependencies("${PROJECT_NAME}"
 		SpdLog
 		PugiXML
