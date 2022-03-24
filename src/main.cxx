@@ -25,6 +25,8 @@
 #include <chrono>
 #include <algorithm>
 
+#define unlikely(x) __builtin_expect((x),0)
+
 static inline bool is_k_error(K x) { return xt == -128; }
 
 std::unordered_map<int, std::string> typemap;
@@ -79,7 +81,7 @@ K pu(I x) {
 }
 
 //
-// Converts a K object into
+// Converts a K object into its FIX string representation.
 //
 std::string kdb_type_to_fix_str(K x) {
     if (-1 == x->t) {
@@ -115,45 +117,44 @@ std::string kdb_type_to_fix_str(K x) {
         rep += kC(x)[i];
     }
 
-    r0(x);
     return rep;
 }
 
-K strtotemporal(const std::string &datestring) {
+K fix_field_to_temporal(const std::string &field) {
     int year, month, day, hour, minute, second, ms;
 
-    std::sscanf(datestring.c_str(), "%4d%2d%2d-%2d:%2d:%2d.%3d", &year, &month, &day, &hour, &minute, &second, &ms);
+    std::sscanf(field.c_str(), "%4d%2d%2d-%2d:%2d:%2d.%3d", &year, &month, &day, &hour, &minute, &second, &ms);
 
     auto tp_micro = Tm(year, month, day, hour, minute, second).to_time_point();
     K tp = pu(std::chrono::high_resolution_clock::to_time_t(tp_micro)); // ms from Unix epoch
     auto time = tp->j + ms * 1e6;
 
-    return kj(time);
+    return ktj(-KP, time);
 }
 
-int fix_field_to_date(const std::string &date) {
+K fix_field_to_date(const std::string &field) {
     int year, month, day;
-    std::sscanf(date.c_str(), "%4d%2d%2d", &year, &month,
+    std::sscanf(field.c_str(), "%4d%2d%2d", &year, &month,
                 &day); // todo :: handle read errors with sscanf - need to check number if variable read matches
     struct std::tm a = {0, 0, 0, day, month - 1, year - 1900};
     struct std::tm b = {0, 0, 0, 1, 0, 100};
     std::time_t x = std::mktime(&a);
     std::time_t y = std::mktime(&b);
-    return std::difftime(x, y) / (60 * 60 * 24);
+    return kd(std::difftime(x, y) / (60 * 60 * 24));
 }
 
-int fix_field_to_time(const std::string &time) {
+K fix_field_to_time(const std::string &field) {
     int hour, minute, second;
-    sscanf(time.c_str(), "%2d:%2d:%2d", &hour, &minute, &second);
+    std::sscanf(field.c_str(), "%2d:%2d:%2d", &hour, &minute, &second);
     struct std::tm a = {second, minute, hour, 1, 0, 0};
     struct std::tm b = {0, 0, 0, 1, 0, 0};
     std::time_t x = std::mktime(&a);
     std::time_t y = std::mktime(&b);
     int difference = std::difftime(x, y) * 1e3;
-    return difference;
+    return kt(difference);
 }
 
-K convertmsgtype(const std::string &field, const std::string &type) {
+K convert_fix_field_to_kobj(const std::string &field, const std::string &type) {
     if ("FLOAT" == type) {
         return kf(std::stof(field));
     } else if ("STRING" == type) {
@@ -165,12 +166,11 @@ K convertmsgtype(const std::string &field, const std::string &type) {
     } else if ("BOOLEAN" == type) {
         return kb("Y" == field);
     } else if ("TIMESTAMP" == type) {
-        auto ts = strtotemporal(field);
-        return ktj(-KP, ts->j);
+        return fix_field_to_temporal(field);
     } else if ("DATE" == type) {
-        return kd(fix_field_to_date(field));
+        return fix_field_to_date(field);
     } else if ("TIME" == type) {
-        return kt(fix_field_to_time(field));
+        return fix_field_to_time(field);
     } else {
         return kp(const_cast<char *>(field.c_str()));
     }
@@ -189,7 +189,7 @@ fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::
         if (55 == tag) {
             jk(values, ks(const_cast<char *>(str)));
         } else {
-            jk(values, convertmsgtype(str, found->second));
+            jk(values, convert_fix_field_to_kobj(str, found->second));
         }
     }
 }
@@ -212,11 +212,11 @@ static inline void send_bytes(ssize_t expected_bytes, G *buffer) {
     ssize_t bytes_sent = 0;
     while (bytes_sent < expected_bytes > 0) {
         ssize_t written = send(socket_pair[0], &buffer[bytes_sent], (int) (expected_bytes - bytes_sent), 0);
-        if (written == -1) {
+        if (unlikely(written == -1)) {
             spdlog::warn("no bytes written to socket pair: {}", std::strerror(errno));
             continue;
         }
-        if (written == 0) {
+        if (unlikely(written == 0)) {
             spdlog::error("socket closed while expecting bytes");
             return; // todo :: return an error code to allow this to be handled properly?
         }
@@ -228,7 +228,7 @@ static void send_data(K x) {
     K serialized = ee(b9(-1, x));
     r0(x);
 
-    if (is_k_error(serialized)) {
+    if (unlikely(is_k_error(serialized))) {
         spdlog::error("problem serializing fix message: {}", serialized->s);
         r0(serialized);
         return;
@@ -298,11 +298,11 @@ static inline void read_bytes(ssize_t expected_bytes, G *buffer) {
     ssize_t bytes_read = 0;
     while (bytes_read < expected_bytes) {
         ssize_t read = recv(socket_pair[1], &buffer[bytes_read], (int) (expected_bytes - bytes_read), 0);
-        if (read == -1) {
+        if (unlikely(read == -1)) {
             spdlog::warn("no bytes read from socket pair: {}", std::strerror(errno));
             continue;
         }
-        if (read == 0) {
+        if (unlikely(read == 0)) {
             spdlog::error("socket closed while expecting bytes");
             return; // todo :: return an error code to allow this to be handled properly?
         }
@@ -312,7 +312,6 @@ static inline void read_bytes(ssize_t expected_bytes, G *buffer) {
 
 extern "C"
 K receive_data(I x) {
-    spdlog::info("receive_data");
     J size = 0;
     read_bytes(sizeof(size), reinterpret_cast<G *>(&size));
 
@@ -322,13 +321,13 @@ K receive_data(I x) {
     K deserialized = ee(d9(bytes));
     r0(bytes);
 
-    if (is_k_error(deserialized)) {
+    if (unlikely(is_k_error(deserialized))) {
         spdlog::error("deserializing fix message: {}", (deserialized->s ? deserialized->s : ""));
         r0(deserialized);
     } else {
         K result = ee(k(0, (S) ".fix.onrecv", deserialized, (K) nullptr));
 
-        if (is_k_error(result)) {
+        if (unlikely(is_k_error(result))) {
             spdlog::error("sending fix message via .fix.onrecv: {}", (result->s ? result->s : ""));
             r0(result);
         }
@@ -339,7 +338,7 @@ K receive_data(I x) {
 
 template<typename T>
 K create_threaded_socket(K x) {
-    if (x->t != -11) {
+    if (unlikely(x->t != -11)) {
         return krr((S) "type");
     }
 
@@ -368,7 +367,7 @@ K create_acceptor(K x) { return create_threaded_socket<FIX::ThreadedSocketAccept
 
 extern "C"
 K create(K x, K y) {
-    if (-11 != x->t) {
+    if (unlikely(-11 != x->t)) {
         return krr((S) "type");
     }
 
