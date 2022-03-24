@@ -15,6 +15,7 @@
 
 #include <config.h>
 #include <cstring>
+#include <cerrno>
 #include <iostream>
 #include <unordered_map>
 #include <string>
@@ -24,15 +25,9 @@
 #include <chrono>
 #include <algorithm>
 
-// Each FIX session will resize its buffer for sending and retrieving data
-//
-constexpr uint64_t MAX_BUFFER_SIZE_MB = 64;
-constexpr uint64_t MAX_BUFFER_SIZE_BYTES = MAX_BUFFER_SIZE_MB * 1024 * 1024;
+static inline bool is_k_error(K x) { return xt == -128; }
 
 std::unordered_map<int, std::string> typemap;
-
-std::vector<uint8_t> send_buffer;
-std::vector<uint8_t> recv_buffer;
 
 // socket pair for communication between fix engine instance and the main q thread.
 //
@@ -212,36 +207,36 @@ static K convert_to_dictionary(const FIX::Message &message) {
     return xD(keys, values);
 }
 
-static void send_data(K x) {
-    // serialize the dictionary that is being sent...
-    K serialized = ee(b9(-1, x));
+static inline void send_bytes(ssize_t expected_bytes, G *buffer) {
+    ssize_t bytes_sent = 0;
+    while (bytes_sent < expected_bytes > 0) {
+        ssize_t written = send(socket_pair[0], &buffer[bytes_sent], (int) (expected_bytes - bytes_sent), 0);
+        if (written == -1) {
+            spdlog::warn("no bytes written to socket pair: {}", std::strerror(errno));
+            continue;
+        }
+        if (written == 0) {
+            spdlog::error("socket closed while expecting bytes");
+            return; // todo :: return an error code to allow this to be handled properly?
+        }
+        bytes_sent += written;
+    }
+}
 
-    // release the original object...
+static void send_data(K x) {
+    K serialized = ee(b9(-1, x));
     r0(x);
 
-    // check that there were no errors with serializing...
-    if (serialized->t == -128) {
-        spdlog::error("serializing fix message: {}", (serialized->s ? serialized->s : ""));
-        r0(serialized);
-        return;
-    }
-
-    size_t message_size = sizeof(serialized->n) + serialized->n;
-
-    if (message_size > MAX_BUFFER_SIZE_BYTES) {
-        spdlog::error("message size too large to write to internal buffer. (size: {})", message_size);
+    if (is_k_error(serialized)) {
+        spdlog::error("problem serializing fix message: {}", serialized->s);
         r0(serialized);
         return;
     }
 
     // write the size of the serialized K object followed by the K object serialized...
-    send_buffer.resize(message_size);
-    std::memcpy(&send_buffer[0], &serialized->n, sizeof(serialized->n));
-    std::memcpy(&send_buffer[sizeof(serialized->n)], kG(serialized), serialized->n);
+    send_bytes(sizeof(serialized->n), reinterpret_cast<G *>(&serialized->n));
+    send_bytes(serialized->n, kG(serialized));
 
-    send(socket_pair[0], &send_buffer[0], message_size, 0);
-
-    // release the serialized object...
     r0(serialized);
 }
 
@@ -274,11 +269,6 @@ K send_message_dict(K x) {
     K keys = kK(x)[0];
     K values = kK(x)[1];
 
-    std::string beginString;
-    std::string senderCompId;
-    std::string targetCompId;
-    std::string sessionQualifier;
-
     FIX::Message message;
     FIX::Header &header = message.getHeader();
 
@@ -297,47 +287,48 @@ K send_message_dict(K x) {
     try {
         FIX::Session::sendToTarget(message);
     } catch (FIX::SessionNotFound &ex) {
-        std::cout << "unable to send message - session not found" << std::endl;
+        spdlog::error("unable to send fix message - session not found");
     }
 
     return (K) nullptr;
 }
 
-static inline void read_bytes(ssize_t expected_bytes, uint8_t *buffer) {
+static inline void read_bytes(ssize_t expected_bytes, G *buffer) {
     ssize_t bytes_read = 0;
-    do { bytes_read += recv(socket_pair[1], &buffer[bytes_read], (int) (expected_bytes - bytes_read), 0); } while (bytes_read < expected_bytes);
-}
-
-static inline void read_from_socket(void *dest, ssize_t expected_bytes) {
-    recv_buffer.resize(expected_bytes);
-    read_bytes(expected_bytes, &recv_buffer[0]);
-    std::memcpy(dest, &recv_buffer[0], expected_bytes);
+    while (bytes_read < expected_bytes) {
+        ssize_t read = recv(socket_pair[1], &buffer[bytes_read], (int) (expected_bytes - bytes_read), 0);
+        if (read == -1) {
+            spdlog::warn("no bytes read from socket pair: {}", std::strerror(errno));
+            continue;
+        }
+        if (read == 0) {
+            spdlog::error("socket closed while expecting bytes");
+            return; // todo :: return an error code to allow this to be handled properly?
+        }
+        bytes_read += read;
+    }
 }
 
 extern "C"
 K receive_data(I x) {
+    spdlog::info("receive_data");
     J size = 0;
-    read_from_socket(&size, sizeof(size));
-
-    if (size > MAX_BUFFER_SIZE_BYTES) {
-        spdlog::error("message size too large for write to internal buffer. (size: {})", size);
-        return (K) nullptr;
-    }
+    read_bytes(sizeof(size), reinterpret_cast<G *>(&size));
 
     K bytes = ktn(KG, size);
-    read_from_socket(kG(bytes), size);
+    read_bytes(size, kG(bytes));
 
     K deserialized = ee(d9(bytes));
     r0(bytes);
 
-    if (deserialized->t == -128) {
+    if (is_k_error(deserialized)) {
         spdlog::error("deserializing fix message: {}", (deserialized->s ? deserialized->s : ""));
         r0(deserialized);
     } else {
         K result = ee(k(0, (S) ".fix.onrecv", deserialized, (K) nullptr));
 
-        if (result->t == -128) {
-            spdlog::error("deserializing fix message: {}", (result->s ? result->s : ""));
+        if (is_k_error(result)) {
+            spdlog::error("sending fix message via .fix.onrecv: {}", (result->s ? result->s : ""));
             r0(result);
         }
     }

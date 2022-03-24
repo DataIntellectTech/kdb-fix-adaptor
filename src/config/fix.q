@@ -1,7 +1,6 @@
 .fix:(`:./@BINARY_NAME@ 2:(`LoadLibrary;1))`
 
 .fix.onrecv:{[x]
-    show x;
     .e.e:x;
     if[x[35]~enlist "D"; .fix.send_execution_report[`$x[.fix.tags.TargetCompID];`$x[.fix.tags.SenderCompID]]];
   }
