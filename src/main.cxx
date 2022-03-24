@@ -115,6 +115,7 @@ std::string kdb_type_to_fix_str(K x) {
         rep += kC(x)[i];
     }
 
+    r0(x);
     return rep;
 }
 
