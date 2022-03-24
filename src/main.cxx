@@ -7,6 +7,7 @@
 #include <quickfix/ThreadedSocketAcceptor.h>
 #include <quickfix/ThreadedSocketInitiator.h>
 #include <quickfix/SessionSettings.h>
+
 #include <pugixml.hpp>
 
 #include "k.h"
@@ -477,7 +478,7 @@ void initialize_type_map() {
     if (!doc.load_file("./spec/FIX42.xml")) throw std::runtime_error("XML could not be loaded");
     pugi::xml_node fields = doc.child("fix").child("fields");
 
-    for (pugi::xml_node field = fields.child("field"); field; field = field.next_sibling("field")) {
+    for (auto field = fields.child("field"); field; field = field.next_sibling("field")) {
         int value = field.attribute("number").as_int();
         std::string fieldattr = fix_type_to_kdb_type(field.attribute("type").value());
         typemap.insert({value, fieldattr});
@@ -486,17 +487,16 @@ void initialize_type_map() {
 
 extern "C"
 K LoadLibrary(K x) {
-    printf("████████████████████████████████████████████████████\n");
-    printf(" release » %-5s                                     \n", BUILD_PROJECT_VERSION);
-    printf(" quickfix » %-5s                                    \n", BUILD_QUICKFIX_VERSION);
-    printf(" os » %-5s                                          \n", BUILD_OPERATING_SYSTEM);
-    printf(" arch » %-5s                                        \n", BUILD_PROCESSOR);
-    printf(" git commit » %-5s                                  \n", BUILD_GIT_SHA1);
-    printf(" git commit datetime » %-5s                         \n", BUILD_GIT_DATE);
-    printf(" build datetime » %-5s                              \n", BUILD_DATE);
-    printf(" kdb compatibility » %s.x                           \n", BUILD_KX_VER);
-    printf(" compiler flags » %-5s                              \n", BUILD_COMPILER_FLAGS);
-    printf("████████████████████████████████████████████████████\n");
+    spdlog::info(" release » {}",  BUILD_PROJECT_VERSION);
+    spdlog::info(" quickfix » {}", BUILD_QUICKFIX_VERSION);
+    spdlog::info(" pugixml » {}", BUILD_PUGIXML_VERSION);
+    spdlog::info(" os » {} ", BUILD_OPERATING_SYSTEM);
+    spdlog::info(" arch » {}", BUILD_PROCESSOR);
+    spdlog::info(" git commit » {}", BUILD_GIT_SHA1);
+    spdlog::info(" git commit datetime » {}", BUILD_GIT_DATE);
+    spdlog::info(" build datetime » {}", BUILD_DATE);
+    spdlog::info(" kdb compatibility » {}", BUILD_KX_VER);
+    spdlog::info(" compiler flags » {}", BUILD_COMPILER_FLAGS);
 
     K keys = ktn(KS, 6);
     K values = ktn(0, 6);
@@ -516,6 +516,7 @@ K LoadLibrary(K x) {
     kK(values)[5] = dl((void *) get_version_info, 1);
 
     // todo :: this should be done lazily when a session is created based on the acceptor or initiator config.
+    // todo :: should keep different maps for different sessions as each could be using different message formats.
     initialize_type_map();
 
     return xD(keys, values);
