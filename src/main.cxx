@@ -105,7 +105,7 @@ std::string kdb_type_to_fix_str(K x) {
         buffer[19] = timestr[10];
         buffer[20] = timestr[11];
         x = kp(buffer);
-    } else if (-14 == x->t) {
+    } else if ((-14 == x->t) || (-13 == x->t)) {
         x = k(0, (S) R"({ssr[string x;".";""]})", x, (K) nullptr);
     }
 
