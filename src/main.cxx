@@ -224,14 +224,14 @@ spec_mapping &get_spec_map() {
 }
 
 void initialize_type_map(const FIX::SessionID &session, const std::string &specfile) {
-    spdlog::info("loading type map for session: {}, from spec file: {}", session.toStringFrozen(), specfile);
+    spdlog::info("loading type map for session {} from spec file {}", session.toStringFrozen(), specfile);
 
     auto& spec_map = get_spec_map();
     auto iter = spec_map.find(session.toStringFrozen());
 
     // If a spec already exists for this session, then we don't need to load it again.
     if (iter != spec_map.end()) {
-        spdlog::info("spec file has already been loaded for session: {}", session.toStringFrozen());
+        spdlog::warn("spec file has already been loaded for session: {}. you may have duplicate sessions in your configuration file!", session.toStringFrozen());
         return;
     }
 
@@ -239,7 +239,6 @@ void initialize_type_map(const FIX::SessionID &session, const std::string &specf
     std::shared_ptr<fixtag_mapping> map = std::make_shared<fixtag_mapping>();
     spec_map.insert({session.toStringFrozen(), map});
 
-    spdlog::info("populated static map A:{} B:{}", spec_map.size(), get_spec_map().size());
     pugi::xml_document doc;
     if (unlikely(!doc.load_file(specfile.c_str()))) {
         spdlog::error("can't load the spec file: {}", specfile);
@@ -322,6 +321,11 @@ void FixEngineApplication::fromApp(const FIX::Message &message,
     send_data(convert_to_dictionary(message, sessionID));
 }
 
+constexpr int TAG_MSG_TYPE = 35;
+constexpr int TAG_SENDER_COMP_ID = 49;
+constexpr int TAG_TARGET_COMP_ID = 56;
+constexpr int TAG_BEGIN_STRING = 8;
+
 extern "C"
 K send_message_dict(K x) {
     if (x->t != 99 || kK(x)[0]->t != 7 || kK(x)[1]->t != 0) {
@@ -335,12 +339,12 @@ K send_message_dict(K x) {
     FIX::Header &header = message.getHeader();
 
     for (int i = 0; i < keys->n; i++) {
-        auto rep = kdb_type_to_fix_str(kK(values)[i]);
-        int tag = kJ(keys)[i];
-        if (tag == 35 || tag == 8 || tag == 49 || tag == 56) {
-            header.setField(tag, rep);
+        J tag = kJ(keys)[i];
+
+        if (tag == TAG_MSG_TYPE || tag == TAG_BEGIN_STRING || tag == TAG_SENDER_COMP_ID || tag == TAG_TARGET_COMP_ID) {
+            header.setField((int) tag, kdb_type_to_fix_str(kK(values)[i]));
         } else {
-            message.setField(tag, rep);
+            message.setField((int) tag, kdb_type_to_fix_str(kK(values)[i]));
         }
     }
 
@@ -396,7 +400,6 @@ K receive_data(I x) {
     return (K) nullptr;
 }
 
-
 template<typename T>
 K create_threaded_socket(K x) {
     if (unlikely(x->t != -11)) {
@@ -413,10 +416,9 @@ K create_threaded_socket(K x) {
         auto log = new FIX::FileLogFactory(*settings);
 
         // Iterate each session in the ini file and make sure we have loaded in the types for
-        // each specification.
+        // each specification. DataDictionary should be a relative path.
         for (auto session : settings->getSessions()) {
             auto dict_path = settings->get(session).getString("DataDictionary");
-            spdlog::info("loading type mapping from specification: {} for session: {}", dict_path, session.toStringFrozen());
             initialize_type_map(session, dict_path);
         }
 
@@ -425,10 +427,8 @@ K create_threaded_socket(K x) {
 
         T *socket = new T(*application, *store, *settings, *log);
         socket->start();
-    } catch(FIX::ConfigError& err) {
-        spdlog::error("quickfix config error: {}", err.what());
-    } catch (FIX::RuntimeError& err) {
-        spdlog::error("quickfix runtime error: {}", err.what());
+    } catch (FIX::Exception& err) {
+        spdlog::error("quickfix error: {}", err.what());
     }
 
     return (K) nullptr;
