@@ -16,7 +16,6 @@
 #include <config.h>
 #include <cstring>
 #include <cerrno>
-#include <iostream>
 #include <unordered_map>
 #include <string>
 #include <vector>
@@ -29,7 +28,16 @@
 
 static inline bool is_k_error(K x) { return xt == -128; }
 
-std::unordered_map<int, std::string> typemap;
+// A mapping from fix tag ids to datatypes pulled from the appropriate FIX specification file. This
+// is used when converting the fix messages into K objects so that dates/times/booleans etc are converted
+// to the correct K type instead of being passed through as strings.
+//
+// This needs to be a pointer/heap allocated as only copy constructable objects can be nested in other maps.
+using fixtag_mapping = std::unordered_map<int, std::string>;
+
+// Since different FIX sessions can be using different specifications, we need to lookup which mapping to use
+// when decoding a message with fill_from_iterators.
+using spec_mapping = std::unordered_map<std::string, std::shared_ptr<fixtag_mapping>>;
 
 // socket pair for communication between fix engine instance and the main q thread.
 //
@@ -37,6 +45,9 @@ std::unordered_map<int, std::string> typemap;
 // socket_pair[1] is for reading from the main thread.
 int socket_pair[2];
 
+// This shared library is currently designed so that there is only one instance of a fix engine application
+// that is running at a time. It just takes the messages from any sessions that are currently running,
+// converts them to a K object and then
 class FixEngineApplication : public FIX::Application {
 public:
     void onCreate(const FIX::SessionID &sessionID) override;
@@ -55,10 +66,6 @@ public:
     void fromApp(const FIX::Message &message,
                  const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType) override;
 };
-
-K pu(I x) {
-    return k(0, (S) "`timestamp$", kz(x / 8.64e4 - 10957), (K) nullptr);
-}
 
 //
 // Converts a K object into its FIX string representation.
@@ -147,11 +154,11 @@ K parse_fix_to_kobj(const std::string &field, const std::string &type) {
 
 static void
 fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::Fields::const_iterator end, K *keys,
-                    K *values) {
+                    K *values, const fixtag_mapping &map) {
     for (auto it = begin; it != end; it++) {
         J tag = (J) it->getTag();
         auto str = it->getString().c_str();
-        auto found = typemap.find(tag);
+        auto found = map.find(tag);
         ja(keys, &tag);
 
         if (55 == tag) {
@@ -162,23 +169,109 @@ fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::
     }
 }
 
-static K convert_to_dictionary(const FIX::Message &message) {
+std::unordered_map<std::string, std::string> &get_fix_to_kdb_type_mapping() {
+    // Mapping of FIX types to KDB types used when decoding FIX messages. If a type is not
+    // present in this map then it will be converted into a string.
+    static std::unordered_map<std::string, std::string> STATIC_CONVERSION_MAP = {
+            {"STRING",              "STRING"},
+            {"MULTIPLEVALUESTRING", "STRING"},
+            {"PRICE",               "FLOAT"},
+            {"CHAR",                "CHAR"},
+            {"INT",                 "INT"},
+            {"AMT",                 "FLOAT"},
+            {"CURRENCY",            "FLOAT"},
+            {"QTY",                 "FLOAT"},
+            {"EXCHANGE",            "SYM"},
+            {"UTCTIMESTAMP",        "TIMESTAMP"},
+            {"BOOLEAN",             "BOOLEAN"},
+            {"LOCALMKTDATE",        "DATE"},
+            {"DATA",                "STRING"},
+            {"LENGTH",              "FLOAT"},
+            {"FLOAT",               "FLOAT"},
+            {"PRICEOFFSET",         "FLOAT"},
+            {"MONTHYEAR",           "STRING"},
+            {"DAYOFMONTH",          "STRING"},
+            {"UTCDATE",             "DATE"},
+            {"UTCTIMEONLY",         "TIME"},
+            {"COUNTRY",             "STRING"},
+            {"DATE",                "STRING"},
+            {"EXCHANGE",            "SYM"},
+            {"LANGUAGE",            "STRING"},
+            {"MULTIPLECHARVALUE",   "STRING"},
+            {"MULTIPLESTRINGVALUE", "STRING"},
+            {"NUMINGROUP",          "INT"},
+            {"PERCENTAGE",          "FLOAT"},
+            {"PRICEOFFSET",         "FLOAT"},
+            {"SEQNUM",              "INT"},
+            {"TIME",                "STRING"},
+            {"UTCDATE",             "DATE"},
+            {"UTCTIMEONLY",         "STRING"},
+    };
+
+    // Initialized only on first call to function due to static storage.
+    return STATIC_CONVERSION_MAP;
+}
+
+std::string fix_type_to_kdb_type(const std::string &s) {
+    auto& conversion_map = get_fix_to_kdb_type_mapping();
+    auto found = conversion_map.find(s);
+    return found != std::end(conversion_map) ? found->second : "STRING";
+}
+
+spec_mapping &get_spec_map() {
+    static spec_mapping STATIC_SPEC_MAP{};
+    return STATIC_SPEC_MAP;
+}
+
+void initialize_type_map(const FIX::SessionID &session, const std::string &specfile) {
+    spdlog::info("loading type map for session: {}, from spec file: {}", session.toStringFrozen(), specfile);
+
+    auto& spec_map = get_spec_map();
+    auto iter = spec_map.find(session.toStringFrozen());
+
+    // If a spec already exists for this session, then we don't need to load it again.
+    if (iter != spec_map.end()) {
+        spdlog::info("spec file has already been loaded for session: {}", session.toStringFrozen());
+        return;
+    }
+
+    // create the fix tag mapping on the heap and add it to the spec map
+    std::shared_ptr<fixtag_mapping> map = std::make_shared<fixtag_mapping>();
+    spec_map.insert({session.toStringFrozen(), map});
+
+    spdlog::info("populated static map A:{} B:{}", spec_map.size(), get_spec_map().size());
+    pugi::xml_document doc;
+    if (unlikely(!doc.load_file(specfile.c_str()))) {
+        spdlog::error("can't load the spec file: {}", specfile);
+        throw std::runtime_error("XML could not be loaded");
+    }
+
+    // populate the FIX tag mapping from the FIX data dictionary
+    pugi::xml_node fields = doc.child("fix").child("fields");
+    for (auto field = fields.child("field"); field; field = field.next_sibling("field")) {
+        map->insert({field.attribute("number").as_int(), fix_type_to_kdb_type(field.attribute("type").value())});
+    }
+}
+
+static K convert_to_dictionary(const FIX::Message &message, const FIX::SessionID &sessionID) {
     K keys = ktn(KJ, 0);
     K values = ktn(0, 0);
 
     auto header = message.getHeader();
     auto trailer = message.getTrailer();
 
-    fill_from_iterators(std::begin(header), std::end(header), &keys, &values);
-    fill_from_iterators(std::begin(message), std::end(message), &keys, &values);
-    fill_from_iterators(std::begin(trailer), std::end(trailer), &keys, &values);
+    auto typemap = get_spec_map().at(sessionID.toStringFrozen());
+
+    fill_from_iterators(std::begin(header), std::end(header), &keys, &values, *typemap);
+    fill_from_iterators(std::begin(message), std::end(message), &keys, &values, *typemap);
+    fill_from_iterators(std::begin(trailer), std::end(trailer), &keys, &values, *typemap);
 
     return xD(keys, values);
 }
 
 static inline void send_bytes(ssize_t expected_bytes, G *buffer) {
     ssize_t bytes_sent = 0;
-    while (bytes_sent < expected_bytes > 0) {
+    while (bytes_sent < expected_bytes) {
         ssize_t written = send(socket_pair[0], &buffer[bytes_sent], (int) (expected_bytes - bytes_sent), 0);
         if (unlikely(written == -1)) {
             spdlog::warn("no bytes written to socket pair: {}", std::strerror(errno));
@@ -217,16 +310,16 @@ void FixEngineApplication::onLogout(const FIX::SessionID &sessionID) {}
 
 void FixEngineApplication::toAdmin(FIX::Message &message, const FIX::SessionID &sessionID) {}
 
-void FixEngineApplication::toApp(FIX::Message &message, const FIX::SessionID &sessionID) throw(FIX::DoNotSend) {}
+void FixEngineApplication::toApp(FIX::Message &message, const FIX::SessionID &sessionID) throw (FIX::DoNotSend) {}
 
 void FixEngineApplication::fromAdmin(const FIX::Message &message,
                                      const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::RejectLogon) {
-    send_data(convert_to_dictionary(message));
+    send_data(convert_to_dictionary(message, sessionID));
 }
 
 void FixEngineApplication::fromApp(const FIX::Message &message,
                                    const FIX::SessionID &sessionID) throw(FIX::FieldNotFound, FIX::IncorrectDataFormat, FIX::IncorrectTagValue, FIX::UnsupportedMessageType) {
-    send_data(convert_to_dictionary(message));
+    send_data(convert_to_dictionary(message, sessionID));
 }
 
 extern "C"
@@ -303,25 +396,40 @@ K receive_data(I x) {
     return (K) nullptr;
 }
 
+
 template<typename T>
 K create_threaded_socket(K x) {
     if (unlikely(x->t != -11)) {
         return krr((S) "type");
     }
 
-    std::string settingsPath = std::string(x->s);
-    settingsPath.erase(std::remove(std::begin(settingsPath), std::end(settingsPath), ':'), std::end(settingsPath));
+    try {
+        std::string settingsPath = std::string(x->s);
+        settingsPath.erase(std::remove(std::begin(settingsPath), std::end(settingsPath), ':'), std::end(settingsPath));
 
-    auto settings = new FIX::SessionSettings(settingsPath);
-    auto application = new FixEngineApplication;
-    auto store = new FIX::FileStoreFactory(*settings);
-    auto log = new FIX::FileLogFactory(*settings);
+        auto settings = new FIX::SessionSettings(settingsPath);
+        auto application = new FixEngineApplication;
+        auto store = new FIX::FileStoreFactory(*settings);
+        auto log = new FIX::FileLogFactory(*settings);
 
-    dumb_socketpair(socket_pair, 0);
-    sd1(socket_pair[1], receive_data);
+        // Iterate each session in the ini file and make sure we have loaded in the types for
+        // each specification.
+        for (auto session : settings->getSessions()) {
+            auto dict_path = settings->get(session).getString("DataDictionary");
+            spdlog::info("loading type mapping from specification: {} for session: {}", dict_path, session.toStringFrozen());
+            initialize_type_map(session, dict_path);
+        }
 
-    T *socket = new T(*application, *store, *settings, *log);
-    socket->start();
+        dumb_socketpair(socket_pair, 0);
+        sd1(socket_pair[1], receive_data);
+
+        T *socket = new T(*application, *store, *settings, *log);
+        socket->start();
+    } catch(FIX::ConfigError& err) {
+        spdlog::error("quickfix config error: {}", err.what());
+    } catch (FIX::RuntimeError& err) {
+        spdlog::error("quickfix runtime error: {}", err.what());
+    }
 
     return (K) nullptr;
 }
@@ -343,8 +451,9 @@ K create(K x, K y) {
     if (-11 == y->t) {
         r0(z);
         z = ks((S) y->s);
+        spdlog::info("loading session configuration from {}", y->s);
     } else {
-        std::cout << "Defaulting to sample.ini config" << std::endl;
+        spdlog::info("defaulting to sessions/sample.ini");
     }
 
     if (strcmp("initiator", x->s) == 0) {
@@ -382,67 +491,6 @@ K get_version_info(K x) {
     return xD(keys, values);
 }
 
-std::unordered_map<std::string, std::string> &get_conversion_map() {
-    // Mapping of FIX types to KDB types used when decoding FIX messages. If a type is not
-    // present in this map then it will be converted into a string.
-    static std::unordered_map<std::string, std::string> STATIC_CONVERSION_MAP = {
-            {"STRING",              "STRING"},
-            {"MULTIPLEVALUESTRING", "STRING"},
-            {"PRICE",               "FLOAT"},
-            {"CHAR",                "CHAR"},
-            {"INT",                 "INT"},
-            {"AMT",                 "FLOAT"},
-            {"CURRENCY",            "FLOAT"},
-            {"QTY",                 "FLOAT"},
-            {"EXCHANGE",            "SYM"},
-            {"UTCTIMESTAMP",        "TIMESTAMP"},
-            {"BOOLEAN",             "BOOLEAN"},
-            {"LOCALMKTDATE",        "DATE"},
-            {"DATA",                "STRING"},
-            {"LENGTH",              "FLOAT"},
-            {"FLOAT",               "FLOAT"},
-            {"PRICEOFFSET",         "FLOAT"},
-            {"MONTHYEAR",           "STRING"},
-            {"DAYOFMONTH",          "STRING"},
-            {"UTCDATE",             "DATE"},
-            {"UTCTIMEONLY",         "TIME"},
-            {"COUNTRY",             "STRING"},
-            {"DATE",                "STRING"},
-            {"EXCHANGE",            "SYM"},
-            {"LANGUAGE",            "STRING"},
-            {"MULTIPLECHARVALUE",   "STRING"},
-            {"MULTIPLESTRINGVALUE", "STRING"},
-            {"NUMINGROUP",          "INT"},
-            {"PERCENTAGE",          "FLOAT"},
-            {"PRICEOFFSET",         "FLOAT"},
-            {"SEQNUM",              "INT"},
-            {"TIME",                "STRING"},
-            {"UTCDATE",             "DATE"},
-            {"UTCTIMEONLY",         "STRING"},
-    };
-
-    // Initialized only on first call to function due to static storage.
-    return STATIC_CONVERSION_MAP;
-}
-
-std::string fix_type_to_kdb_type(const std::string &s) {
-    auto conversion_map = get_conversion_map();
-    auto found = conversion_map.find(s);
-    return found != std::end(conversion_map) ? found->second : "STRING";
-}
-
-void initialize_type_map() {
-    pugi::xml_document doc;
-    if (!doc.load_file("./spec/FIX42.xml")) throw std::runtime_error("XML could not be loaded");
-    pugi::xml_node fields = doc.child("fix").child("fields");
-
-    for (auto field = fields.child("field"); field; field = field.next_sibling("field")) {
-        int value = field.attribute("number").as_int();
-        std::string fieldattr = fix_type_to_kdb_type(field.attribute("type").value());
-        typemap.insert({value, fieldattr});
-    }
-}
-
 extern "C"
 K LoadLibrary(K x) {
     spdlog::info(" release » {}",  BUILD_PROJECT_VERSION);
@@ -470,10 +518,6 @@ K LoadLibrary(K x) {
     kK(values)[3] = dl((void *) on_recv, 1);
     kK(values)[4] = dl((void *) create, 2);
     kK(values)[5] = dl((void *) get_version_info, 1);
-
-    // todo :: this should be done lazily when a session is created based on the acceptor or initiator config.
-    // todo :: should keep different maps for different sessions as each could be using different message formats.
-    initialize_type_map();
 
     return xD(keys, values);
 }
