@@ -39,6 +39,12 @@ using fixtag_mapping = std::unordered_map<int, std::string>;
 // when decoding a message with fill_from_iterators.
 using spec_mapping = std::unordered_map<std::string, std::shared_ptr<fixtag_mapping>>;
 
+constexpr int TAG_MSG_TYPE = 35;
+constexpr int TAG_SENDER_COMP_ID = 49;
+constexpr int TAG_TARGET_COMP_ID = 56;
+constexpr int TAG_BEGIN_STRING = 8;
+constexpr int TAG_SYMBOL = 55;
+
 // socket pair for communication between fix engine instance and the main q thread.
 //
 // socket_pair[0] is for writing to the main thread.
@@ -161,7 +167,7 @@ fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::
         auto found = map.find(tag);
         ja(keys, &tag);
 
-        if (55 == tag) {
+        if (tag == TAG_SYMBOL) {
             jk(values, ks(const_cast<char *>(str)));
         } else {
             jk(values, parse_fix_to_kobj(str, found->second));
@@ -321,10 +327,7 @@ void FixEngineApplication::fromApp(const FIX::Message &message,
     send_data(convert_to_dictionary(message, sessionID));
 }
 
-constexpr int TAG_MSG_TYPE = 35;
-constexpr int TAG_SENDER_COMP_ID = 49;
-constexpr int TAG_TARGET_COMP_ID = 56;
-constexpr int TAG_BEGIN_STRING = 8;
+
 
 extern "C"
 K send_message_dict(K x) {
@@ -435,12 +438,6 @@ K create_threaded_socket(K x) {
 }
 
 extern "C"
-K create_initiator(K x) { return create_threaded_socket<FIX::ThreadedSocketInitiator>(x); }
-
-extern "C"
-K create_acceptor(K x) { return create_threaded_socket<FIX::ThreadedSocketAcceptor>(x); }
-
-extern "C"
 K create(K x, K y) {
     if (unlikely(-11 != x->t)) {
         return krr((S) "type");
@@ -469,30 +466,8 @@ K create(K x, K y) {
     }
 }
 
-// We have an empty implementation of on_recv for the case where the q code doesn't provide
-// one for us.
-extern "C" K on_recv(K x) { return (K) nullptr; }
-
 extern "C"
-K get_version_info(K x) {
-    K keys = ktn(KS, 4);
-    K values = ktn(KS, 4);
-
-    kS(keys)[0] = ss((S) "release");
-    kS(keys)[1] = ss((S) "quickfix");
-    kS(keys)[2] = ss((S) "os");
-    kS(keys)[3] = ss((S) "kx");
-
-    kS(values)[0] = ss((S) BUILD_PROJECT_VERSION);
-    kS(values)[1] = ss((S) BUILD_QUICKFIX_VERSION);
-    kS(values)[2] = ss((S) BUILD_OPERATING_SYSTEM);
-    kS(values)[3] = ss((S) BUILD_KX_VER);
-
-    return xD(keys, values);
-}
-
-extern "C"
-K LoadLibrary(K x) {
+K load_library(K x) {
     spdlog::info(" release » {}",  BUILD_PROJECT_VERSION);
     spdlog::info(" quickfix » {}", BUILD_QUICKFIX_VERSION);
     spdlog::info(" pugixml » {}", BUILD_PUGIXML_VERSION);
@@ -502,22 +477,14 @@ K LoadLibrary(K x) {
     spdlog::info(" kdb compatibility » {}", BUILD_KX_VER);
     spdlog::info(" compiler flags » {}", BUILD_COMPILER_FLAGS);
 
-    K keys = ktn(KS, 6);
-    K values = ktn(0, 6);
+    K keys = ktn(KS, 2);
+    K values = ktn(0, 2);
 
-    kS(keys)[0] = ss((S) "initiator");
-    kS(keys)[1] = ss((S) "acceptor");
-    kS(keys)[2] = ss((S) "send");
-    kS(keys)[3] = ss((S) "onrecv");
-    kS(keys)[4] = ss((S) "create");
-    kS(keys)[5] = ss((S) "version");
+    kS(keys)[0] = ss((S) "send");
+    kS(keys)[1] = ss((S) "create");
 
-    kK(values)[0] = dl((void *) create_initiator, 1);
-    kK(values)[1] = dl((void *) create_acceptor, 1);
-    kK(values)[2] = dl((void *) send_message_dict, 1);
-    kK(values)[3] = dl((void *) on_recv, 1);
-    kK(values)[4] = dl((void *) create, 2);
-    kK(values)[5] = dl((void *) get_version_info, 1);
+    kK(values)[0] = dl((void *) send_message_dict, 1);
+    kK(values)[1] = dl((void *) create, 2);
 
     return xD(keys, values);
 }

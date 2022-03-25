@@ -1,4 +1,4 @@
-.fix:(`:./@BINARY_NAME@ 2:(`LoadLibrary;1))`
+.fix:(`:./@BINARY_NAME@ 2:(`load_library;1))`
 
 .fix.onrecv:{[x]
     .e.e:x;
