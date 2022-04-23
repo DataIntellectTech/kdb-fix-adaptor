@@ -1,152 +1,163 @@
 # KDB+ FIX Engine
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 FIX is one of the most common protocols used within the finance industry. This repository provides a shared library
-implementation of a FIX engine. The accompanying document also describes how to use this library to communicate with
-the FIXimulator tool for testing purposes. The implementation is currently in an alpha state and has not been used in
-a production system to date. Bugs and features requests should be made through GitHub.
+implementation of a FIX engine based on QuickFIX. The implementation is currently in an alpha state and has not
+been used in a production system to date. Bugs and features requests should be made through GitHub.
 
-The PDF documentation for this resource can be found [here][gitpdfdoc] and also on the [AquaQ Analytics][aquaqresources]
-website.
+## Quick Start
 
-Installation & Setup
---------------------
+You can grab the latest release package from GitHub, extract it and start using it to process fix messages
 
-### Extra Resources
-This project uses CMake 3.2+ to support building across multiple platforms and has been tested on Linux. The CMake toolchain will generate the build artefacts required for your platform automatically.
+```shell
+wget https://github.com/aquaqanalytics/kdb-fix-adaptor/refs/tags/0.6.0.tar.gz
+tar xvf 0.6.0.tar.gz
+cd 0.6.0
+q fix.q
 
-### KDB+
-A recent version of kdb+ (i.e version 3.x) should be used when working with the FIX engine. The free 32-bit version of the software can be downloaded from the [Kx Systems][kxsystemslink] website.
-
-### <img src="docs/icons/linux.png" height="16px"> Building on Linux
-
-Install Quickfix
-
-```sh
-$ sudo apt-get install g++ automake libtool libxml2 libxml2-dev
-$ git clone https://github.com/quickfix/quickfix
-$ cd quickfix
-$ ./bootstrap
-$ ./configure
-$ make
-$ sudo make install
-```
-
-Install FIX Library
-
-This project provides a simple shell script that will handle the build process for you. It will compile all the artifacts in a /tmp folder and then copy the resulting package into your source directory. You can look at this script for an example of how to run the CMake build process manually. Whilst inside the quickfix repo, run the following.
-
-```sh
-$ git clone https://github.com/AquaQAnalytics/kdb-fix-adaptor
-$ cd kdb-fix-adaptor
-$ ./package.sh
-```
-
-A successful build will place a .tar.gz file in the fix-build directory that contains the shared object, a q script to load the shared object into the .fix namespace and some example configuration files. Unzip this file.
-
-
-**Note on dynamic exceptions:
-
-In kdb-fix-adapter/src/main.cxx, the dynamic exceptions on lines 54, 55, 57, 127, 132 and 137 have been left in despite being depreciated in the current C++ 11 standard. This is because the parent functions in quickfix, which define the functions, contain exceptions. Therefore, instead of altering a 3rd party library, the depreciation errors that are produced have been suppressed by lines 34, 35 and 142 in order to allow the script to run. The dynamic exceptions and suppressing lines may be removed once quickfix is updated.
-
-### Building for 32 bit
-
-In order to build a 32 bit binary on a 64 bit machine you will need to install the following packages
-for Debian/Ubuntu systems (there will be equivalent steps to get a multilib environment set up with
-other distributions):
-
-```sh
-$ sudo apt-get install gcc-multilib g++-multilib
-```
-
-Install Quick Fix (32-bit Build)
-
-Append -m32 to both the compiler and linker flags in quickfix/UnitTest++/Makefile since this is not
-handled by the ./configure step. The updated flags should resemble the versions below:
-
-```sh
-CXXFLAGS ?= -g -m32 -Wall -W -Winline -Wno-unused-private-field -Wno-overloaded-virtual -ansi
-LDFLAGS ?= -m32
-```
-
-Then at the configure step for the quickfix library, you can pass in some flags to build and install
-the 32 bit versions of the library. If you are building in the same directory as you built the 64 bit
-version, then ensure you 'make clean' first:
-
-```sh
-make clean
-./bootstrap
-./configure --build=i686-pc-linux-gnu "CFLAGS=-m32" "CXXFLAGS=-m32" "LDFLAGS=-m32"
-make
-sudo make install
-```
-
-Install FIX Adapter (32-bit Build)
-
-Change the BUILD_x86 option in the CMakeLists.txt from "OFF" to "ON" and then rebuild the package to get
-a 32 bit binary.
-
-Starting Servers (Acceptors) and Clients (Initiators)
-----------------
-
-The .fix.create function is common to both starting Acceptors and Initiators. 
-
-The Acceptor is the server side component of a FIX engine that provides some sort of service by binding to a port and accepting messages. To start an acceptor you need to call the .fix.create function with acceptor as the first argument. The second argument may be either an empty list or a specified configuration, e.g :sessions/sample.ini. The .fix.create function called as an acceptor will start a background thread that will receive and validate messages and finally forward them to the .fix.onrecv function if the message is well formed.
-
-```apl
-/ q fix.q
+# See the usage tutorial in the docs/ folder for examples on how to use the library
 q) .fix.create[`acceptor;()]
-Defaulting to sample.ini config
-Creating Acceptor
 ```
 
-The Initiator is the client side component of the FIX engine and is intended to be used to connect to acceptors to send messages. To start an initiator you need to call the .fix.create function. This will create a background thread that will open a socket to the target acceptor and allow you to send/receive messages.
+You should read the [usage docs](./docs/usage.md) for some examples on how to configure the library and construct/send FIX messages.
 
-```apl
-/ q fix.q
-q) .fix.create[`initiator;`:sessions/sample.ini]
-Creating Initiator
+## Building from Source
+
+If you would like to build from source in order to contribute to the repository or to adjust the behaviour of the shared library to your own needs,
+you can follow the steps below.
+
+### Requirements
+ - Build tools such as autotools, make, gcc etc. (You can install these with `yum groupinstall 'Development Tools'` on RHEL/CentOS or `apt install build-essential` on Debian/Ubuntu based systems)
+ - CMake 3.14+
+ - Git 2.3+
+ - KDB 3.4+  (you can see details on how to install on the [Kx Systems][kxsystemslink] website)
+ 
+### CMake Options
+
+You can configure the build using the following CMake Flags:
+
+| Option                 | Default | Description                                                                                     |
+|------------------------|---------|-------------------------------------------------------------------------------------------------|
+| USE_SYSTEM_QUICKFIX    | OFF     | *Use the system provided QuickFix install instead of downloading a matched version from GitHub* |
+| USE_32BIT              | OFF     | *Generate 32-bit binaries (requires a multilib install on the build system)*                    |
+| USE_GENERIC_FIX_GROUPS | **ON**  | *Expand repeating groups in FIX messages automatically*                                         |
+
+You can pass these flags when invoking CMake to override the defaults:
+
+```shell
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_GENERIC_FIX_GROUPS=OFF -DUSE_32BIT=ON
 ```
 
-Sending a FIX Message
---------------------
+### Unix Build
 
-In order to send a FIX message from an initiator to an acceptor, you can use the .fix.send function. The send is executed synchronously and will either raise a signal upon error, otherwise you can assume that the message has been received successfully by the counterparty.
+To build on a unix system you can follow the steps below using cmake to generate the build files. These steps are also placed into
+an example script called `package.sh` that will do this for you.
 
-In order to determine who the message will be sent to, the library will read the contents the message dictionary and look for a session on the same process that matches. The BeginString, SenderCompID and TargetCompID fields must be present in every message for this reason.
+1. Clone the git repository
 
-```apl
-/ Session 1 - Create an Acceptor
-/ q fix.q
-q) .fix.create[`acceptor;()]
-Defaulting to sample.ini config
-Creating Acceptor
-
-/ Session 2 - Create an Initiator
-/ q fix.q
-q) .fix.create[`initiator;()]
-Defaulting to sample.ini config
-Creating Initiator
-
-/ We can create a dictionary
-/ containing tags and message values
-q) message: (8 11 35 46 ...)!("FIX.4.4";175;enlist "D";enlist "8" ...)
-/ Then send it as a message
-q) .fix.send[message]
+```shell
+git clone https://github.com/aquaqanalytics/kdb-fix-adaptor.git
+cd kdb-fix-adaptor
+git submodule update --init --recursive
 ```
 
+2. Create an out-of-source build directory and move into it
 
-Acknowledgements
-----------------
+```shell
+mkdir build-directory && cd build-directory
+```
 
-This product includes software developed by quickfixengine.org ([http://www.quickfixengine.org/][quickfixlink]).
-This software is based on ([pugixml library][pugixmllink]). pugixml is Copyright (C) 2006-2015 Arseny Kapoulkine.
+3. Generate the build files
+```shell
+# Generate a release build with optimizations enabled
+#
+# N.B. You can also run ccmake here to get a cli gui that will show you the available build options instead
+# of passing them to cmake as command line options.
+cmake .. -DCMAKE_BUILD_TYPE=Release
+```
+
+4. Run the build with make
+
+```shell
+# You can just run the default make target if you are interested in just building the binaries. The build_package
+# target will create a .tar.gz file that is tagged with the version number and contains the binaries, default config,
+# readme and licences.
+make build_package
+```
+
+### Docker Build Environments
+
+Two Dockerfiles are provided for building the shared library on RHEL7 and Ubuntu. Once they are built and stored in your
+docker images list they will start up instantly and give you a build environment.
+
+```shell
+# Build the Ubuntu Focal 20.04 image for compatibility with Ubuntu/Debian/GLIBC 2.31
+docker build -t aquaq/ubuntu docker/ubuntu
+
+# Build the Centos 7 image for compatibility with CentOS/RHEL7/GLIBC 2.17
+#
+# WARN: This will take a while to build as the RHEL7 repositories don't have versions of
+# git/cmake that are recent enough, so we build these from source. It's only expensive
+# when we build the image, not when we use it.
+#
+docker build -t aquaq/centos7 docker/centos7
+```
+
+Once you have built one of the images above, you can quickly mount the source code directory into the container with
+the `-v <localdir>:<containerdir>` flag to perform a build. Just running the `package.sh` script should leave you with
+a build artifact for the target platform, or you can run the more detailed build steps above.
+
+```shell
+# start a shell within a centos environment - this example is also forwarding ssh on
+# port 2222 so that you can attach a remote IDE or debugger. See the Docker documentation
+# for more details on the command flags.
+docker run --rm -it -p 2222:22 -v $(pwd):/build aquaq/centos7
+
+# Run your build process (or just call package.sh)
+[aquaq-build@4f44468d8da4 build]$ mkdir example-debug-build && cd example-debug-build
+[aquaq-build@4f44468d8da4 build]$ cmake .. -DCMAKE_BUILD_TYPE=Debug
+[aquaq-build@4f44468d8da4 build]$ make build_package
+...
+[100%] Built target build_package
+[aquaq-build@4f44468d8da4 build]$ ls
+...
+kdbfix-0.6.0-Linux-x86_64.tar.gz
+
+# once we exit the container the build cache && artifacts will remain as the build directory was mounted directly
+[aquaq-build@4f44468d8da4 build]$ exit
+```
+
+License
+-------
+
+Copyright 2020 AquaQ Analytics
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+## Contact
+
+If you have any suggestions or issues relating to the library, please [open an issue on GitHub][github-new-issue].
+
+## Acknowledgements
+* This product includes software developed by quickfixengine.org ([http://www.quickfixengine.org/][quickfixlink]). 
+* This software is based on ([pugixml library][pugixmllink]). pugixml is Copyright (C) 2006-2015 Arseny Kapoulkine.
 
 [aquaqwebsite]: http://www.aquaq.co.uk  "AquaQ Analytics Website"
 [aquaqresources]: http://www.aquaq.co.uk/resources "AquaQ Analytics Website Resources"
-[gitpdfdoc]: https://github.com/AquaQAnalytics/kdb-fix-adaptor/blob/master/docs/FixSharedLibrary.pdf
 [quickfixrepo]: https://github.com/quickfix/quickfix/
-[quickfixlink]: http://www.quickfixengine.org/ 
-[fiximulatorlink]: http://fiximulator.org/
-[fiximulatorcode]: https://code.google.com/p/fiximulator/
+[quickfixlink]: http://www.quickfixengine.org/
 [pugixmllink]: http://www.pugixml.org/
-[kxsystemslink]: http://kx.com/software-download.php
+[kxsystemslink]: https://kx.com/developers/download-licenses/
+
+[github-new-issue]: https://github.com/markrooney/kdb-templates/issues/new/choose

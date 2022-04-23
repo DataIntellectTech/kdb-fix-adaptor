@@ -1,19 +1,19 @@
-#include <spdlog/spdlog.h>
+#include "spdlog/spdlog.h"
 
-#include <quickfix/Application.h>
-#include <quickfix/FileStore.h>
-#include <quickfix/FileLog.h>
-#include <quickfix/FieldMap.h>
-#include <quickfix/ThreadedSocketAcceptor.h>
-#include <quickfix/ThreadedSocketInitiator.h>
-#include <quickfix/SessionSettings.h>
+#include "quickfix/Application.h"
+#include "quickfix/FileStore.h"
+#include "quickfix/FileLog.h"
+#include "quickfix/FieldMap.h"
+#include "quickfix/ThreadedSocketAcceptor.h"
+#include "quickfix/ThreadedSocketInitiator.h"
+#include "quickfix/SessionSettings.h"
 
-#include <pugixml.hpp>
+#include "pugixml.hpp"
 
 #include "k.h"
 #include "socketpair.h"
 
-#include <config.h>
+#include "config.h"
 #include <cstring>
 #include <cerrno>
 #include <unordered_map>
@@ -26,18 +26,27 @@
 
 #define unlikely(x) __builtin_expect((x),0)
 
+// TODO :: Have build process install into /usr/lib or QHOME directly with make install -DPATH=${QHOME] etc...
+// TODO :: Clean up & arrange documentation
+// TODO :: Fix up the change log
+// TODO :: Add encoding support for repeating groups
+
 static inline bool is_k_error(K x) { return xt == -128; }
 
 // A mapping from fix tag ids to datatypes pulled from the appropriate FIX specification file. This
 // is used when converting the fix messages into K objects so that dates/times/booleans etc are converted
 // to the correct K type instead of being passed through as strings.
-//
-// This needs to be a pointer/heap allocated as only copy constructable objects can be nested in other maps.
 using fixtag_mapping = std::unordered_map<int, std::string>;
 
 // Since different FIX sessions can be using different specifications, we need to lookup which mapping to use
-// when decoding a message with fill_from_iterators.
+// when decoding a message with fill_from_iterators. This is a mapping from the session id string -> fixtag_mapping.
 using spec_mapping = std::unordered_map<std::string, std::shared_ptr<fixtag_mapping>>;
+
+// A group is a sorted list of fix tags that should be treated as repeating groups when unpacking the message. These
+// are parsed from the FIX specification.
+using group_vector = std::vector<int>;
+
+using spec_groups = std::unordered_map<std::string, std::shared_ptr<group_vector>>;
 
 constexpr int TAG_MSG_TYPE = 35;
 constexpr int TAG_SENDER_COMP_ID = 49;
@@ -77,10 +86,8 @@ public:
 // Converts a K object into its FIX string representation.
 //
 std::string kdb_type_to_fix_str(K x) {
-    std::string result;
-
     if (-1 == x->t) {
-        1 == x->g ? result.append("Y") : result.append("N");
+        x = 1 == x->g ? kp((S) "Y") : kp((S) "N");
     } else if (x->t <= -2 && x->t >= -11) {
         x = k(0, (S) "string ", r1(x), (K) nullptr);
     } else if (-12 == x->t) {
@@ -102,12 +109,15 @@ std::string kdb_type_to_fix_str(K x) {
         x = k(0, (S) R"({ssr[string x;".";""]})", r1(x), (K) nullptr);
     }
 
-    return std::string{reinterpret_cast<S>(kC(x)), static_cast<size_t>(x->n)};
+    auto res = std::string{reinterpret_cast<S>(kC(x)), static_cast<size_t>(x->n)};
+    return res;
 }
 
 K parse_fix_to_timestamp(const std::string &field) {
     int year, month, day, hour, minute, second, ms;
-    std::sscanf(field.c_str(), "%4d%2d%2d-%2d:%2d:%2d.%3d", &year, &month, &day, &hour, &minute, &second, &ms);
+    if (unlikely(7 != std::sscanf(field.c_str(), "%4d%2d%2d-%2d:%2d:%2d.%3d", &year, &month, &day, &hour, &minute, &second, &ms))) {
+        spdlog::warn("parse_fix_to_timestamp couldn't read the timestamp from the string: {}. timestamp may be incorrect", field.c_str());
+    }
 
     std::tm tm{};
     tm.tm_year  = year - 1930;
@@ -126,21 +136,23 @@ K parse_fix_to_timestamp(const std::string &field) {
 
 K parse_fix_to_date(const std::string &field) {
     int year, month, day;
-    std::sscanf(field.c_str(), "%4d%2d%2d", &year, &month, &day);
+    if (unlikely(3 != std::sscanf(field.c_str(), "%4d%2d%2d", &year, &month, &day))) {
+        spdlog::warn("parse_fix_to_date couldn't read the date from the string: {}. date may be incorrect", field.c_str());
+    }
     return kd(ymd(year, month, day));
 }
 
 K parse_fix_to_time(const std::string &field) {
     int hour, minute, second;
-    std::sscanf(field.c_str(), "%2d:%2d:%2d", &hour, &minute, &second);
+    if (unlikely(3 != std::sscanf(field.c_str(), "%2d:%2d:%2d", &hour, &minute, &second))) {
+        spdlog::warn("parse_fix_to_time couldn't read the date from the string: {}. time may be incorrect", field.c_str());
+    }
     return kt(((hour * 3600) + (minute * 60) + second) * 1000);
 }
 
 K parse_fix_to_kobj(const std::string &field, const std::string &type) {
     if ("FLOAT" == type) {
         return kf(std::stof(field));
-    } else if ("STRING" == type) {
-        return kp(const_cast<char *>(field.c_str()));
     } else if ("INT" == type) {
         return ki(std::stoi(field));
     } else if ("CHAR" == type) {
@@ -153,24 +165,55 @@ K parse_fix_to_kobj(const std::string &field, const std::string &type) {
         return parse_fix_to_date(field);
     } else if ("TIME" == type) {
         return parse_fix_to_time(field);
+    } else if ("SYM" == type) {
+        return ks(const_cast<char *>(field.c_str()));
     } else {
         return kp(const_cast<char *>(field.c_str()));
     }
 }
 
+spec_mapping &get_spec_map() {
+    static spec_mapping STATIC_SPEC_MAP;
+    return STATIC_SPEC_MAP;
+}
+
+spec_groups &get_spec_groups() {
+    static spec_groups STATIC_SPEC_GROUPS;
+    return STATIC_SPEC_GROUPS;
+}
+
 static void
 fill_from_iterators(FIX::FieldMap::Fields::const_iterator begin, FIX::FieldMap::Fields::const_iterator end, K *keys,
-                    K *values, const fixtag_mapping &map) {
-    for (auto it = begin; it != end; it++) {
-        J tag = (J) it->getTag();
-        auto str = it->getString().c_str();
-        auto found = map.find(tag);
-        ja(keys, &tag);
+                    K *values, const FIX::SessionID& sessionID, const FIX::Message& message) {
+    auto typemap = get_spec_map().at(sessionID.toStringFrozen());
+    auto groups = get_spec_groups().at(sessionID.toStringFrozen());
 
-        if (tag == TAG_SYMBOL) {
-            jk(values, ks(const_cast<char *>(str)));
+    for (auto it = begin; it != end; it++) {
+        I tag = it->getTag();
+        *keys = ja(keys, &tag);
+
+        if (unlikely(std::binary_search(groups->cbegin(), groups->cend(), tag))) {
+            // repeating groups are stored as a nested mixed list of dictionaries
+            K grp = ktn(0, 0);
+
+            // If it's a repeating group we need to parse, then recursively call fill_from_iterators on each group
+            // within the message.
+            auto count = message.groupCount(tag);
+            for (int i = 0; i < count; i++) {
+                K grpkeys = ktn(KI, 0);
+                K grpvalues = ktn(0, 0);
+
+                auto field_set = message.getGroupPtr(i + 1, tag); // QuickFIX message index starts at 1 for repeating groups
+                fill_from_iterators(field_set->begin(), field_set->end(), &grpkeys, &grpvalues, sessionID, message);
+
+                grp = jk(&grp, xD(grpkeys, grpvalues));
+            }
+
+            // append all of the repeating groups into the field.
+            *values = jk(values, grp);
         } else {
-            jk(values, parse_fix_to_kobj(str, found->second));
+            // otherwise, we can just parse it into a k object.
+            *values = jk(values, parse_fix_to_kobj(it->getString(), tag == TAG_SYMBOL ? "SYM" : typemap->at(tag)));
         }
     }
 }
@@ -224,11 +267,18 @@ std::string fix_type_to_kdb_type(const std::string &s) {
     return found != std::end(conversion_map) ? found->second : "STRING";
 }
 
-spec_mapping &get_spec_map() {
-    static spec_mapping STATIC_SPEC_MAP{};
-    return STATIC_SPEC_MAP;
-}
-
+//
+// When we start a new session, we have to read the specification file provided and pull out some information
+// to help us process the different data types and repeating groups.
+//
+// 1. a mapping of int -> string representing the FIX tags to their types as per the specification that
+// is currently being used. This is for converting FIX strings to K objects.
+//
+// 2. a vector of tags that are used to identify repeating groups that have to be packed/unpacked per the specification
+// currently being used.
+//
+// TODO :: store mappings based on the same specification once
+//
 void initialize_type_map(const FIX::SessionID &session, const std::string &specfile) {
     spdlog::info("loading type map for session {} from spec file {}", session.toStringFrozen(), specfile);
 
@@ -236,14 +286,10 @@ void initialize_type_map(const FIX::SessionID &session, const std::string &specf
     auto iter = spec_map.find(session.toStringFrozen());
 
     // If a spec already exists for this session, then we don't need to load it again.
-    if (iter != spec_map.end()) {
+    if (unlikely(iter != spec_map.end())) {
         spdlog::warn("spec file has already been loaded for session: {}. you may have duplicate sessions in your configuration file!", session.toStringFrozen());
         return;
     }
-
-    // create the fix tag mapping on the heap and add it to the spec map
-    std::shared_ptr<fixtag_mapping> map = std::make_shared<fixtag_mapping>();
-    spec_map.insert({session.toStringFrozen(), map});
 
     pugi::xml_document doc;
     if (unlikely(!doc.load_file(specfile.c_str()))) {
@@ -251,25 +297,51 @@ void initialize_type_map(const FIX::SessionID &session, const std::string &specf
         throw std::runtime_error("XML could not be loaded");
     }
 
-    // populate the FIX tag mapping from the FIX data dictionary
+    auto& spec_groups = get_spec_groups();
+    std::shared_ptr<group_vector> groups = std::make_shared<group_vector>();
+    spec_groups.insert({ session.toStringFrozen(), groups});
+
+    // go through all of the message types in the spec and find the names of the groups...
+    std::vector<std::string> group_names;
+    pugi::xml_node messages = doc.child("fix").child("messages");
+    for (auto message = messages.child("message"); message; message = message.next_sibling("message")) {
+        for (auto group = message.child("group"); group; group = group.next_sibling("group")) {
+            group_names.emplace_back(group.attribute("name").as_string());
+        }
+    }
+
+    // create the fix tag mapping on the heap and add it to the spec map
+    std::shared_ptr<fixtag_mapping> map = std::make_shared<fixtag_mapping>();
+    spec_map.insert({session.toStringFrozen(), map});
+
+    // populate the FIX tag mapping from the FIX data dictionary and if we reach a group we should store the
     pugi::xml_node fields = doc.child("fix").child("fields");
     for (auto field = fields.child("field"); field; field = field.next_sibling("field")) {
-        map->insert({field.attribute("number").as_int(), fix_type_to_kdb_type(field.attribute("type").value())});
+        auto tag = field.attribute("number").as_int();
+        auto name = std::string(field.attribute("name").as_string());
+
+        map->insert({ tag , fix_type_to_kdb_type(field.attribute("type").value())});
+
+        auto it = std::find(std::begin(group_names), std::end(group_names), name);
+        if (it != group_names.cend()) {
+            groups->push_back(tag);
+        }
     }
+
+    // sort the group vector as we will be using it for frequent lookups later
+    std::sort(groups->begin(), groups->end());
 }
 
 static K convert_to_dictionary(const FIX::Message &message, const FIX::SessionID &sessionID) {
-    K keys = ktn(KJ, 0);
+    K keys = ktn(KI, 0);
     K values = ktn(0, 0);
 
     auto header = message.getHeader();
     auto trailer = message.getTrailer();
 
-    auto typemap = get_spec_map().at(sessionID.toStringFrozen());
-
-    fill_from_iterators(std::begin(header), std::end(header), &keys, &values, *typemap);
-    fill_from_iterators(std::begin(message), std::end(message), &keys, &values, *typemap);
-    fill_from_iterators(std::begin(trailer), std::end(trailer), &keys, &values, *typemap);
+    fill_from_iterators(std::begin(header), std::end(header), &keys, &values, sessionID, message);
+    fill_from_iterators(std::begin(message), std::end(message), &keys, &values, sessionID, message);
+    fill_from_iterators(std::begin(trailer), std::end(trailer), &keys, &values, sessionID, message);
 
     return xD(keys, values);
 }
@@ -327,8 +399,6 @@ void FixEngineApplication::fromApp(const FIX::Message &message,
     send_data(convert_to_dictionary(message, sessionID));
 }
 
-
-
 extern "C"
 K send_message_dict(K x) {
     if (x->t != 99 || kK(x)[0]->t != 7 || kK(x)[1]->t != 0) {
@@ -340,6 +410,10 @@ K send_message_dict(K x) {
 
     FIX::Message message;
     FIX::Header &header = message.getHeader();
+
+    // TODO :: create a new fix session id so that we can lookup the groups
+    // auto groups = get_spec_groups().at(sessionID.toStringFrozen());
+    // FIX::SessionID sessionId();
 
     for (int i = 0; i < keys->n; i++) {
         J tag = kJ(keys)[i];
@@ -353,8 +427,9 @@ K send_message_dict(K x) {
 
     try {
         FIX::Session::sendToTarget(message);
-    } catch (FIX::SessionNotFound &ex) {
-        spdlog::error("unable to send fix message - session not found");
+    } catch (FIX::RuntimeError &ex) {
+        spdlog::error("quickfix: send to target failed: ", ex.what());
+        return (K) krr((S) "failed");
     }
 
     return (K) nullptr;
@@ -420,18 +495,20 @@ K create_threaded_socket(K x) {
 
         // Iterate each session in the ini file and make sure we have loaded in the types for
         // each specification. DataDictionary should be a relative path.
-        for (auto session : settings->getSessions()) {
+        for (const auto& session : settings->getSessions()) {
             auto dict_path = settings->get(session).getString("DataDictionary");
             initialize_type_map(session, dict_path);
         }
 
+        // TODO :: store socket pair between threads
         dumb_socketpair(socket_pair, 0);
         sd1(socket_pair[1], receive_data);
 
         T *socket = new T(*application, *store, *settings, *log);
         socket->start();
     } catch (FIX::Exception& err) {
-        spdlog::error("quickfix error: {}", err.what());
+        spdlog::error("quickfix error: can't start socket for session: {}", err.what());
+        return krr((S) "error: can't start socket for session. check logs for details");
     }
 
     return (K) nullptr;
@@ -443,14 +520,14 @@ K create(K x, K y) {
         return krr((S) "type");
     }
 
-    K z = ks((S) "sessions/sample.ini");
+    K z = ks((S) "sessions/example.ini");
 
     if (-11 == y->t) {
         r0(z);
         z = ks((S) y->s);
         spdlog::info("loading session configuration from {}", y->s);
     } else {
-        spdlog::info("defaulting to sessions/sample.ini");
+        spdlog::info("defaulting to sessions/example.ini");
     }
 
     if (strcmp("initiator", x->s) == 0) {
@@ -469,13 +546,14 @@ K create(K x, K y) {
 extern "C"
 K load_library(K x) {
     spdlog::info(" release » {}",  BUILD_PROJECT_VERSION);
-    spdlog::info(" quickfix » {}", BUILD_QUICKFIX_VERSION);
-    spdlog::info(" pugixml » {}", BUILD_PUGIXML_VERSION);
+    spdlog::info(" libs:");
+    spdlog::info("    - quickfix » {}", BUILD_QUICKFIX_VERSION);
+    spdlog::info("    - pugixml  » {}", BUILD_PUGIXML_VERSION);
+    spdlog::info("    - spdlog   » {}", BUILD_SPDLOG_VERSION);
     spdlog::info(" os » {} ", BUILD_OPERATING_SYSTEM);
     spdlog::info(" arch » {}", BUILD_PROCESSOR);
     spdlog::info(" build datetime » {}", BUILD_DATE);
-    spdlog::info(" kdb compatibility » {}", BUILD_KX_VER);
-    spdlog::info(" compiler flags » {}", BUILD_COMPILER_FLAGS);
+    spdlog::info(" build type » {}", BUILD_TYPE);
 
     K keys = ktn(KS, 2);
     K values = ktn(0, 2);
